@@ -1,0 +1,8 @@
+/* Opcional: usa esta clase en el wrapper principal en vez de estilos globales */
+#root {
+  /* sin centrados globales */
+}
+
+.card { /* usamos la clase global de index.css; aquí no hace falta repetir */ }
+
+.read-the-docs { color: #64748b; } /* opcional o borrar */
