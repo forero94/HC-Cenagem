@@ -58,29 +58,38 @@ function CoupleLines({ layout, membersById }) {
 function ChildLines({ layout }) {
   return (
     <g>
-      {layout.childLines.map((ln, i) =>
-        ln.type === 'single' ? (
-          <line key={`s${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2} stroke="#0ea5b7" strokeWidth="2" />
-        ) : ln.type === 'down' ? (
-          <line key={`d${i}`} x1={ln.x} y1={ln.y1} x2={ln.x} y2={ln.y2} stroke="#0ea5b7" strokeWidth="2" />
-        ) : (
-          <line key={`t${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2} stroke="#0ea5b7" strokeWidth="2" />
-        )
-      )}
+      {layout.childLines.map((ln, i) => {
+        if (ln.type === 'down') {
+          return <line key={`d${i}`} x1={ln.x} y1={ln.y1} x2={ln.x} y2={ln.y2} stroke="#0ea5b7" strokeWidth="2" />;
+        }
+        if (ln.type === 'toChild') {
+          return <line key={`t${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2} stroke="#0ea5b7" strokeWidth="2" />;
+        }
+        if (ln.type === 'stub') {
+          return <line key={`p${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2} stroke="#0ea5b7" strokeWidth="2" />;
+        }
+        return null;
+      })}
     </g>
   );
 }
 
 function Nodes({ layout, membersById, proband, selectedId, onSelect }) {
   const yearsSince = (iso) => {
-    if (!iso) return '—';
+    if (!iso) return '';
     const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '—';
+    if (Number.isNaN(d.getTime())) return '';
     const n = new Date();
     let y = n.getFullYear() - d.getFullYear();
     const m = n.getMonth() - d.getMonth();
     if (m < 0 || (m === 0 && n.getDate() < d.getDate())) y--;
     return `${y}a`;
+  };
+
+  const ageLabelForMember = (member) => {
+    if (typeof member?.edadCalculada === 'number') return `${member.edadCalculada}a`;
+    if (member?.edadTexto) return member.edadTexto;
+    return yearsSince(member?.nacimiento);
   };
   const sexShape = (s) => (s === 'M' ? 'square' : s === 'F' ? 'circle' : 'diamond');
 
@@ -91,9 +100,10 @@ function Nodes({ layout, membersById, proband, selectedId, onSelect }) {
         if (!m) return null;
         const shape = m.simbolo && m.simbolo !== 'auto' ? m.simbolo : sexShape(m.sexo);
         const labelTop = (m.filiatorios?.iniciales || m.rol || '') || null;
-        const bottom =
-          [m.nombre || '—', yearsSince(m.nacimiento)].filter(Boolean).join(' · ') +
-          (m.estado === 'fallecido' ? ' · †' : '');
+        const bottomParts = [m.nombre || '—'];
+        const ageLabel = ageLabelForMember(m);
+        if (ageLabel) bottomParts.push(ageLabel);
+        const bottom = bottomParts.join(' · ') + (m.estado === 'fallecido' ? ' · †' : '');
         const isProband = proband && proband.id === m.id;
         return (
           <NodeShape

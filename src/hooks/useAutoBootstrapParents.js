@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { useEnsureOnce } from '../lib/once';
 
 // util: años (entero) entre fechas ISO
@@ -14,7 +14,7 @@ const yearsSince = (iso) => {
 };
 
 // Heurística simple para madre/padre: mayores que el proband, sexo correcto,
-// puntaje por edad plausible y por "rol" (M1/P1) si existe.
+// puntaje por edad plausible y por "rol" (M1/P1/B1/C1) si existe.
 function pickParentCandidates({ proband, members }) {
   if (!proband) return { motherId: null, fatherId: null };
 
@@ -39,19 +39,29 @@ function pickParentCandidates({ proband, members }) {
 
     // 3) hints por rol (opcional)
     const r = (m.rol || '').toLowerCase();
-    if (target === 'mother' && (r === 'm1' || r === 'm' || r.includes('madre'))) s += 3;
-    if (target === 'father' && (r === 'p1' || r === 'p' || r.includes('padre'))) s += 3;
+    if (target === 'mother' && (r === 'm1' || r === 'b1' || r === 'm' || r.includes('madre'))) s += 3;
+    if (target === 'father' && (r === 'p1' || r === 'c1' || r === 'p' || r.includes('padre'))) s += 3;
 
-    // 4) fallback por nombre/iniciales si traes algo tipo "M1" / "P1"
+    // 4) fallback por nombre/iniciales si traes algo tipo "M1" / "P1" / "B1" / "C1"
     const lab = (m.nombre || m.filiatorios?.iniciales || '').toLowerCase();
-    if (target === 'mother' && /^m1$/.test(lab)) s += 2;
-    if (target === 'father' && /^p1$/.test(lab)) s += 2;
+    if (target === 'mother' && /^(m1|b1)$/.test(lab)) s += 2;
+    if (target === 'father' && /^(p1|c1)$/.test(lab)) s += 2;
 
     return s;
   };
 
-  const females = members.filter((x) => x.id !== proband.id && x.sexo === 'F');
-  const males   = members.filter((x) => x.id !== proband.id && x.sexo === 'M');
+  const normalizeSex = (value) => (value || '').toString().trim().toUpperCase();
+  const isFemale = (value) => {
+    const s = normalizeSex(value);
+    return s === 'F' || s === 'FEMENINO' || s === 'FEMALE';
+  };
+  const isMale = (value) => {
+    const s = normalizeSex(value);
+    return s === 'M' || s === 'MASCULINO' || s === 'MALE';
+  };
+
+  const females = members.filter((x) => x.id !== proband.id && isFemale(x.sexo));
+  const males = members.filter((x) => x.id !== proband.id && isMale(x.sexo));
 
   females.sort((a, b) => score(b, 'mother') - score(a, 'mother'));
   males.sort((a, b) => score(b, 'father') - score(a, 'father'));
@@ -68,44 +78,45 @@ export default function useAutoBootstrapParents({
   proband,
   parentsMap,
   basePedigree,
-  mergedMembers,       // <-- necesitamos ver a M1/P1
+  mergedMembers,       // <-- necesitamos ver a M1/P1/B1/C1
   setParentDraft,      // <-- para vincular si reutilizamos
   cloneFromBase,
   addParentsBoth,
   setSelectedMemberId,
+  draftReady,
 }) {
   const once = useEnsureOnce(familyKey || 'no-family');
 
   useEffect(() => {
     if (!proband) return;
+    if (!draftReady) return;
     if (!once('bootstrap-parents')) return;
 
-    // si ya tiene alguno, no hacemos nada
     const p = parentsMap?.[proband.id] || {};
-    if (p.padreId || p.madreId) return;
+    const needsFather = !p.padreId;
+    const needsMother = !p.madreId;
+    if (!needsFather && !needsMother) return;
 
-    // 1) si hay base, clonamos primero (respeta lo existente)
-    const baseHasAny = basePedigree && Object.keys(basePedigree).length > 0;
-    if (baseHasAny) {
+    const baseNode = basePedigree?.[proband.id];
+    if (baseNode && (baseNode.padreId || baseNode.madreId)) {
       cloneFromBase();
       setSelectedMemberId(proband.id);
       return;
     }
 
-    // 2) intentar REUTILIZAR madre/padre existentes (M1/P1) por heurística
     const { motherId, fatherId } = pickParentCandidates({
       proband,
       members: mergedMembers || [],
     });
 
-    if (motherId || fatherId) {
-      if (motherId) setParentDraft(proband.id, 'madreId', motherId);
-      if (fatherId) setParentDraft(proband.id, 'padreId', fatherId);
+    const assignedFromExisting = (needsMother && motherId) || (needsFather && fatherId);
+    if (assignedFromExisting) {
+      if (needsMother && motherId) setParentDraft(proband.id, 'madreId', motherId);
+      if (needsFather && fatherId) setParentDraft(proband.id, 'padreId', fatherId);
       setSelectedMemberId(proband.id);
       return;
     }
 
-    // 3) si no hay candidatos, crear ambos en sandbox
     addParentsBoth(proband.id);
     setSelectedMemberId(proband.id);
   }, [
@@ -117,6 +128,7 @@ export default function useAutoBootstrapParents({
     cloneFromBase,
     addParentsBoth,
     setSelectedMemberId,
+    draftReady,
     once,
   ]);
 }

@@ -1,4 +1,4 @@
-// hooks/usePedigreeDerived.js
+﻿// hooks/usePedigreeDerived.js
 import usePedigree from './usePedigree';
 import useCouples from './useCouples';
 import useSides from './useSides';
@@ -8,11 +8,11 @@ import { useMemo } from 'react';
 export default function usePedigreeDerived(mergedMembers, mergedPedigree){
   const { membersById, parentsMap, proband, generations } =
     usePedigree(mergedMembers, mergedPedigree);
-  const couples = useCouples(parentsMap);
+  const couples = useCouples(parentsMap, mergedMembers);
   const sideMap = useSides({ proband, parentsMap });
 
   const layout = useMemo(() => {
-    const l = useGridLayout({ members: mergedMembers, generations, sideMap });
+    const l = useGridLayout({ members: mergedMembers, generations, sideMap, parentsMap });
     const childLines = [];
     const pos = l.pos; const r = l.nodeR;
     const coupleMid = (a,b) => {

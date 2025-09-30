@@ -1,16 +1,20 @@
-// ===============================
+﻿// ===============================
 // src/routes/FamilyTreePage.jsx — Árbol familiar / Pedigrí (modular)
 // Orquesta: datos + selección + foco/todo + viewport + UI presentacional
 // NO conoce detalles de stores internos; delega en hooks/components.
 // ===============================
-import React, { useState, useCallback } from 'react';
+import React, { useMemo, useState } from 'react';
 
 // ---- Hooks de orquestación (modulares) ----
 import useFamilyData from '../hooks/useFamilyData';
 import useInitialSelection from '../hooks/useInitialSelection';
 import useAutoBootstrapParents from '../hooks/useAutoBootstrapParents';
 import useMembersForLayout from '../hooks/useMembersForLayout';
-import usePedigreeDerived from '../hooks/usePedigreeDerived';
+import usePedigree from '../hooks/usePedigree';
+import useCouples from '../hooks/useCouples';
+import useSides from '../hooks/useSides';
+import useChildLines from '../hooks/useChildLines';
+import useGridLayout from '../hooks/useGridLayout';
 import useViewport from '../hooks/useViewport';
 
 // ---- Componentes presentacionales ----
@@ -26,12 +30,15 @@ export default function FamilyTreePage({ familyId, inline = false }) {
     basePedigree,
     mergedMembers,
     mergedPedigree,
+    draftReady,
     // acciones sandbox
     cloneFromBase,
     addParentsBoth,
     addSibling,
     addChild,
     addPartner,
+    updateMemberDraft,
+    removeMemberDraft,
     setParentDraft,
     resetDraft,
   } = useFamilyData(familyId);
@@ -50,58 +57,91 @@ export default function FamilyTreePage({ familyId, inline = false }) {
   const [viewMode, setViewMode] = useState('todo'); // 'todo' | 'foco'
   useInitialSelection(mergedMembers, selectedId, setSelectedId);
 
-  // 3) Resolver qué miembros entran al layout (foco o todo)
-  //    Nota: este hook necesita conocer el proband/parentsMap; los obtiene
-  //    internamente del mergedPedigree y mergedMembers completos.
+  // 3) Derivar estructuras base sobre el pedigrí completo
+  const {
+    proband,
+    parentsMap: parentsMapFull,
+    membersById: membersByIdFull,
+    generations,
+  } = usePedigree(mergedMembers, mergedPedigree);
+  const couples = useCouples(parentsMapFull, mergedMembers);
+  const sideMap = useSides({ proband, parentsMap: parentsMapFull });
+
+  // 4) Resolver qué miembros entran al layout (foco o todo)
   const membersForLayout = useMembersForLayout({
     viewMode,
-    // estos dos se resolverán dentro usando merged* completos:
-    proband: undefined,
-    parentsMap: undefined,
+    proband,
+    parentsMap: parentsMapFull,
     mergedMembers,
     mergedPedigree,
     maxDepth: 5,
   });
 
-  // 4) Derivados de pedigrí + layout completo (ya incluye childLines/couples/sides)
-  const { proband, membersById, parentsMap, layout } = usePedigreeDerived(
-    membersForLayout,
-    mergedPedigree
+  const parentsMapForLayout = useMemo(() => {
+    if (!membersForLayout.length) return {};
+    const allowed = new Set(membersForLayout.map((m) => m.id));
+    const map = {};
+    Object.entries(parentsMapFull || {}).forEach(([childId, links]) => {
+      if (!allowed.has(childId)) return;
+      const padreId = links.padreId && allowed.has(links.padreId) ? links.padreId : '';
+      const madreId = links.madreId && allowed.has(links.madreId) ? links.madreId : '';
+      if (padreId || madreId) map[childId] = { padreId, madreId };
+    });
+    return map;
+  }, [membersForLayout, parentsMapFull]);
+
+  const couplesForLayout = useMemo(() => {
+    if (!couples?.length) return [];
+    const allowed = new Set(membersForLayout.map((m) => m.id));
+    return couples.filter((c) => allowed.has(c.a) && allowed.has(c.b));
+  }, [couples, membersForLayout]);
+
+  const membersById = useMemo(() => {
+    const map = new Map();
+    membersForLayout.forEach((m) => {
+      map.set(m.id, membersByIdFull.get(m.id) || m);
+    });
+    return map;
+  }, [membersForLayout, membersByIdFull]);
+
+  const layoutBase = useGridLayout({
+    members: membersForLayout,
+    generations,
+    couples: couplesForLayout,
+    sideMap,
+    parentsMap: parentsMapForLayout,
+  });
+  const childLines = useChildLines({
+    parentsMap: parentsMapForLayout,
+    pos: layoutBase.pos,
+    nodeR: layoutBase.nodeR,
+  });
+  const layout = useMemo(
+    () => ({ ...layoutBase, childLines }),
+    [layoutBase, childLines]
   );
 
-  // 5) Bootstrap automático: si el proband no tiene padres, clona base o crea ambos
+  // 6) Bootstrap automático: si el proband no tiene padres, clona base o crea ambos
   useAutoBootstrapParents({
     familyKey: fam?.id,
     proband,
-    parentsMap,
+    parentsMap: parentsMapFull,
     basePedigree,
     mergedMembers,
     setParentDraft,
     cloneFromBase,
     addParentsBoth,
     setSelectedMemberId: setSelectedId,
+    draftReady,
   });
 
 
-  // 6) Viewport (zoom/pan/fit/export)
+  // 7) Viewport (zoom/pan/fit/export)
   const vp = useViewport({
     width: Math.max(800, layout.width),
     height: Math.max(480, layout.height),
   });
 
-  // 7) Asignación de padre/madre para el panel lateral (sandbox-only)
-  const onAssignParent = useCallback(
-    (childId, parentType, newParentId) => {
-      if (!childId) return;
-      if (newParentId === childId) return;
-      // evita duplicar mismo progenitor como padre y madre
-      const otherType = parentType === 'padreId' ? 'madreId' : 'padreId';
-      const existingOther = mergedPedigree?.[childId]?.[otherType];
-      if (existingOther && existingOther === newParentId) return;
-      setParentDraft(childId, parentType, newParentId || '');
-    },
-    [mergedPedigree, setParentDraft]
-  );
 
   if (!fam) {
     return inline ? null : (
@@ -154,11 +194,8 @@ export default function FamilyTreePage({ familyId, inline = false }) {
         <MemberSidebar
           activeId={selectedId}
           mergedMembers={mergedMembers}
-          mergedPedigree={mergedPedigree}
-          onAssignParent={onAssignParent}
+          draftReady={draftReady}
           actions={{
-            cloneFromBase,
-            resetDraft,
             addParentsBoth: (id) => {
               addParentsBoth(id);
               setSelectedId(id);
@@ -172,6 +209,12 @@ export default function FamilyTreePage({ familyId, inline = false }) {
               if (partnerId) setSelectedId(partnerId);
             },
             addChild: (id, sexo) => addChild(id, sexo),
+            updateMember: (memberId, patch) => updateMemberDraft(memberId, patch),
+            removeMember: (memberId) => {
+              removeMemberDraft(memberId);
+              if (memberId === selectedId) setSelectedId('');
+            },
+            resetDraft: resetDraft,
             setSelectedId,
           }}
         />
@@ -195,3 +238,6 @@ export default function FamilyTreePage({ familyId, inline = false }) {
     </div>
   );
 }
+
+
+

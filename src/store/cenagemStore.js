@@ -60,7 +60,7 @@ function reducer(state, action) {
 
     // Base
     case 'CREATE_FAMILY': {
-      const fam = { id: uid(), createdAt: seedNow(), updatedAt: seedNow(), ...action.payload };
+      const fam = action.payload;
       return { ...state, families: [fam, ...state.families] };
     }
     case 'UPDATE_FAMILY': {
@@ -68,9 +68,8 @@ function reducer(state, action) {
       return { ...state, families: state.families.map(f => f.id === familyId ? { ...f, ...patch, updatedAt: seedNow() } : f) };
     }
     case 'CREATE_MEMBER': {
-      const { familyId, data } = action.payload;
-      const m = { id: uid(), familyId, notas: [], ...data };
-      return { ...state, members: [m, ...state.members] };
+      const member = action.payload;
+      return { ...state, members: [member, ...state.members] };
     }
     case 'UPDATE_MEMBER': {
       const { memberId, patch } = action.payload;
@@ -128,9 +127,17 @@ export function useCenagemStore() {
   // Base
   const listFamilies = () => state.families;
   const listMembers = (familyId) => state.members.filter(m => m.familyId === familyId);
-  const createFamily = (data) => { dispatch({ type: 'CREATE_FAMILY', payload: data }); };
+  const createFamily = (data) => {
+    const fam = { id: uid(), createdAt: seedNow(), updatedAt: seedNow(), ...data };
+    dispatch({ type: 'CREATE_FAMILY', payload: fam });
+    return fam;
+  };
   const updateFamily = (familyId, patch) => dispatch({ type: 'UPDATE_FAMILY', payload: { familyId, patch } });
-  const createMember = (familyId, data) => dispatch({ type: 'CREATE_MEMBER', payload: { familyId, data } });
+  const createMember = (familyId, data) => {
+    const member = { id: uid(), familyId, notas: [], ...data };
+    dispatch({ type: 'CREATE_MEMBER', payload: member });
+    return member;
+  };
   const updateMember = (memberId, patch) => dispatch({ type: 'UPDATE_MEMBER', payload: { memberId, patch } });
   const addEvolution = (memberId, texto, author) => dispatch({ type: 'ADD_EVOLUTION', payload: { memberId, texto, author } });
 
