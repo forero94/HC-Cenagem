@@ -1,13 +1,25 @@
-﻿// ===============================
+// ===============================
 // src/routes/HomePage.jsx — Pantalla de inicio
 // ===============================
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCenagemStore } from '@/store/cenagemStore';
-import NewCaseModal from '@/components/NewCaseModal.jsx';
+import NewCaseCreate from '@/components/NewCaseCreate.jsx';
+import NewCaseWizard from '@/components/NewCase/NewCaseWizard.jsx';
 import { MOTIVO_CONSULTA_GROUPS } from '@/lib/motivosConsulta.js';
 
 const uidLocal = () => Math.random().toString(36).slice(2, 10);
 const AGENDA_STORAGE_KEY = 'cenagem-agenda-v1';
+const DEFAULT_DAY_SLOTS = ['08:30', '09:30', '11:00', '13:00', '15:00'];
+const APPOINTMENT_STATUS_COLORS = {
+  Pendiente: 'bg-amber-100 text-amber-700',
+  'En sala': 'bg-blue-100 text-blue-700',
+  Atendido: 'bg-emerald-100 text-emerald-700',
+  Ausente: 'bg-rose-100 text-rose-700',
+};
+
+function getStatusBadgeColor(status) {
+  return APPOINTMENT_STATUS_COLORS[status] || 'bg-slate-200 text-slate-600';
+}
 
 function MetricCard({ label, value, hint }) {
   return (
@@ -43,6 +55,84 @@ function formatFriendlyDate(isoDate) {
   return date.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+function formatISODateLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function startOfWeekMonday(baseDate) {
+  const date = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return date;
+}
+
+function addDays(baseDate, amount) {
+  const date = new Date(baseDate.getTime());
+  date.setDate(date.getDate() + amount);
+  return date;
+}
+
+function buildWeeklyAgendaData(agenda = [], slots = DEFAULT_DAY_SLOTS, weeksCount = 6) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayIso = formatISODateLocal(today);
+  const baseMonday = startOfWeekMonday(today);
+
+  const timesFromAgenda = agenda.map((item) => item.time).filter(Boolean);
+  const slotSet = new Set([...slots, ...timesFromAgenda]);
+  const sortedSlots = Array.from(slotSet).sort((a, b) => a.localeCompare(b));
+
+  const weeks = [];
+
+  for (let index = 0; index < weeksCount; index += 1) {
+    const weekStart = addDays(baseMonday, index * 7);
+    const weekEnd = addDays(weekStart, 6);
+    const days = [];
+    let availableCount = 0;
+
+    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+      const dayDate = addDays(weekStart, dayOffset);
+      const isoDate = formatISODateLocal(dayDate);
+      const appointments = agenda
+        .filter((item) => item.date === isoDate)
+        .map((item) => ({ ...item }))
+        .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+      const usedSlots = new Set(appointments.map((item) => item.time).filter(Boolean));
+      const availableSlots = sortedSlots.filter((slot) => !usedSlots.has(slot));
+      const isPast = dayDate.getTime() < today.getTime();
+      const futureSlots = isPast ? [] : availableSlots;
+      availableCount += futureSlots.length;
+
+      days.push({
+        isoDate,
+        date: dayDate,
+        label: dayDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' }),
+        appointments,
+        availableSlots,
+        futureSlots,
+        isPast,
+        isToday: isoDate === todayIso,
+      });
+    }
+
+    weeks.push({
+      startDate: weekStart,
+      endDate: weekEnd,
+      startLabel: weekStart.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
+      endLabel: weekEnd.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
+      days,
+      availableCount,
+    });
+  }
+
+  return weeks;
+}
+
 function getMemberDisplayName(member) {
   if (!member) return 'Paciente sin nombre';
   return (
@@ -55,8 +145,8 @@ function getMemberDisplayName(member) {
 }
 
 function seedAgendaFromMembers(members = []) {
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const slots = ['08:30', '09:30', '11:00', '13:00'];
+  const todayIso = formatISODateLocal(new Date());
+  const slots = DEFAULT_DAY_SLOTS;
   return members
     .filter((m) => m.rol === 'Proband')
     .slice(0, slots.length)
@@ -65,7 +155,7 @@ function seedAgendaFromMembers(members = []) {
       memberId: member.id,
       familyId: member.familyId,
       date: todayIso,
-      time: slots[index] || '15:00',
+      time: slots[index] || slots[slots.length - 1] || '15:00',
       motivo: member.diagnostico || 'Consulta de seguimiento',
       profesional: index % 2 === 0 ? 'Dra. López' : 'Dr. Sánchez',
       notas: '',
@@ -94,7 +184,8 @@ function normalizeFamilyCodeInput(value) {
 function AgendaForm({ membersOptions, familiesById, defaultDate, onSubmit, onCancel }) {
   const [memberId, setMemberId] = useState(membersOptions[0]?.id || '');
   const [date, setDate] = useState(defaultDate);
-  const [time, setTime] = useState('09:00');
+  const defaultTime = DEFAULT_DAY_SLOTS[0] || '09:00';
+  const [time, setTime] = useState(defaultTime);
   const [profesional, setProfesional] = useState('');
   const [motivo, setMotivo] = useState(membersOptions[0]?.diagnostico || 'Consulta de seguimiento');
   const [motivoPersonalizado, setMotivoPersonalizado] = useState(false);
@@ -131,7 +222,7 @@ function AgendaForm({ membersOptions, familiesById, defaultDate, onSubmit, onCan
       notas: notas.trim()
     });
 
-    setTime('09:00');
+    setTime(defaultTime);
     setProfesional('');
     setNotas('');
     setMotivoPersonalizado(false);
@@ -241,14 +332,7 @@ function AgendaList({ items, membersById, familiesById, onStatusChange, onRemove
         if (!member || !family) return null;
 
         const name = getMemberDisplayName(member);
-        const statusColor =
-          item.estado === 'Atendido'
-            ? 'bg-emerald-100 text-emerald-700'
-            : item.estado === 'Ausente'
-              ? 'bg-rose-100 text-rose-700'
-              : item.estado === 'En sala'
-                ? 'bg-blue-100 text-blue-700'
-                : 'bg-amber-100 text-amber-700';
+        const statusColor = getStatusBadgeColor(item.estado);
 
         return (
           <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
@@ -360,48 +444,198 @@ function TodayAgenda({
   );
 }
 
-function FollowUpPanel({ items, membersById, familiesById, onOpenFamily }) {
+function WeeklyAgendaBoard({ agenda, membersById, familiesById, selectedDate, onSelectDate }) {
+  const weeks = useMemo(() => buildWeeklyAgendaData(agenda), [agenda]);
+  const firstAvailableIndex = useMemo(
+    () => weeks.findIndex((week) => week.availableCount > 0),
+    [weeks],
+  );
+  const [weekIndex, setWeekIndex] = useState(() => (firstAvailableIndex >= 0 ? firstAvailableIndex : 0));
+  const autoSnapRef = useRef(false);
+
+  useEffect(() => {
+    if (!autoSnapRef.current && firstAvailableIndex >= 0) {
+      setWeekIndex(firstAvailableIndex);
+      autoSnapRef.current = true;
+    }
+  }, [firstAvailableIndex]);
+
+  useEffect(() => {
+    const weeksLength = weeks.length;
+    if (weeksLength === 0) {
+      setWeekIndex(0);
+      return;
+    }
+    if (weekIndex >= weeksLength) {
+      setWeekIndex(Math.max(0, weeksLength - 1));
+    }
+  }, [weeks.length, weekIndex]);
+
+  if (!weeks.length) {
+    return null;
+  }
+
+  const week = weeks[Math.min(weekIndex, weeks.length - 1)];
+
+  const nextAvailableSlot = useMemo(() => {
+    for (const weekItem of weeks) {
+      for (const day of weekItem.days) {
+        if (day.futureSlots.length > 0) {
+          const nextDateLabel = day.date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'short' });
+          return {
+            date: day.isoDate,
+            slot: day.futureSlots[0],
+            label: nextDateLabel,
+          };
+        }
+      }
+    }
+    return null;
+  }, [weeks]);
+
+  const handlePrevWeek = () => setWeekIndex((prev) => Math.max(prev - 1, 0));
+  const handleNextWeek = () => setWeekIndex((prev) => Math.min(prev + 1, weeks.length - 1));
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
-      <div>
-        <div className="text-sm font-semibold text-slate-900">Seguimiento pendiente</div>
-        <div className="text-[11px] text-slate-500">Pacientes pendientes de evolucionar de la ultima semana</div>
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <div className="text-sm font-semibold text-slate-900">Turnos por semana</div>
+          <div className="text-[11px] text-slate-500">
+            Semana del {week.startLabel} al {week.endLabel}.{' '}
+            {week.availableCount > 0
+              ? `${week.availableCount} turnos libres.`
+              : 'Sin disponibilidad futura en esta semana.'}
+          </div>
+          {nextAvailableSlot && (
+            <div className="text-[11px] text-emerald-700">
+              Próximo turno disponible: {nextAvailableSlot.label} · {nextAvailableSlot.slot} hs
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePrevWeek}
+            disabled={weekIndex === 0}
+            className="px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium hover:bg-slate-50 disabled:opacity-40"
+          >
+            Semana anterior
+          </button>
+          <span className="text-xs text-slate-500">
+            Semana {weekIndex + 1} / {weeks.length}
+          </span>
+          <button
+            type="button"
+            onClick={handleNextWeek}
+            disabled={weekIndex >= weeks.length - 1}
+            className="px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium hover:bg-slate-50 disabled:opacity-40"
+          >
+            Semana siguiente
+          </button>
+        </div>
       </div>
-      {items.length === 0 ? (
-        <div className="text-sm text-slate-500">No hay alertas en este momento.</div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {items.map((item) => {
+
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-3">
+        {week.days.map((day) => {
+          const enrichedAppointments = day.appointments.map((item) => {
             const member = membersById[item.memberId];
             const family = familiesById[item.familyId];
-            if (!member || !family) return null;
-            const name = getMemberDisplayName(member);
-            const lastLabel = item.lastEvolution
-              ? new Date(item.lastEvolution).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
-              : 'Sin registro';
-            const daysLabel = Number.isFinite(item.daysSince) ? `${item.daysSince} días` : 'Sin registros';
-            return (
-              <div key={item.memberId} className="border border-amber-200 bg-amber-50/80 rounded-2xl p-4 flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{name}</div>
-                    <div className="text-[11px] text-slate-500">HC {family.code} · {family.provincia || 'Provincia sin cargar'}</div>
-                  </div>
-                  <span className="text-[11px] font-medium px-2 py-1 rounded-full bg-amber-200 text-amber-800">Revisión</span>
+            return {
+              ...item,
+              patientName: getMemberDisplayName(member),
+              familyCode: family?.code || '—',
+            };
+          });
+          const isSelected = selectedDate === day.isoDate;
+          return (
+            <div
+              key={day.isoDate}
+              className={`rounded-2xl border border-slate-200 bg-slate-50/60 p-3 flex flex-col gap-2 ${isSelected ? 'border-slate-900 ring-2 ring-slate-900/20 bg-white' : ''}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-900 capitalize">
+                    {day.label}
+                  </span>
+                  {day.isToday && (
+                    <span className="text-[10px] px-2 py-1 rounded-full bg-slate-900 text-white uppercase tracking-wide">
+                      Hoy
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs text-slate-600">Última evolución: {lastLabel}</div>
-                <div className="text-xs text-slate-600">Pendiente hace: {daysLabel}</div>
-                <div>
-                  <button onClick={() => onOpenFamily(item.familyId)} className="text-xs px-3 py-1 rounded-lg border border-amber-300 hover:bg-amber-100">
-                    Abrir HC
-                  </button>
-                </div>
+                {day.isPast ? (
+                  <span className="text-[10px] uppercase tracking-wide text-slate-400">Pasado</span>
+                ) : day.futureSlots.length > 0 ? (
+                  <span className="text-[10px] uppercase tracking-wide text-emerald-700">
+                    {day.futureSlots.length} libres
+                  </span>
+                ) : (
+                  <span className="text-[10px] uppercase tracking-wide text-rose-600">Completo</span>
+                )}
               </div>
-            );
-          })}
+
+              <div className="flex flex-col gap-2">
+                {enrichedAppointments.length ? (
+                  enrichedAppointments.map((item) => {
+                    const statusColor = getStatusBadgeColor(item.estado);
+                    return (
+                      <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-2 flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-900">{item.time || 'Sin hora'}</span>
+                          <span className={`text-[10px] uppercase tracking-wide px-2 py-1 rounded-full ${statusColor}`}>
+                            {item.estado}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-700">{item.patientName}</div>
+                        <div className="text-[10px] text-slate-500">HC {item.familyCode}</div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-xs text-slate-500">Sin turnos agendados</div>
+                )}
+              </div>
+
+              {!day.isPast && day.futureSlots.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {day.futureSlots.map((slot) => (
+                    <span
+                      key={slot}
+                      className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 uppercase tracking-wide"
+                    >
+                      {slot}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {onSelectDate && (
+                <button
+                  type="button"
+                  onClick={() => onSelectDate(day.isoDate)}
+                  className="text-xs px-3 py-1 rounded-lg border border-slate-300 hover:bg-white transition"
+                >
+                  Ver día
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {firstAvailableIndex >= 0 && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setWeekIndex(firstAvailableIndex)}
+            className="text-xs px-3 py-1 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+          >
+            Ir al próximo disponible
+          </button>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -443,6 +677,84 @@ function buildMotivoMetadata(groupId, detailId) {
     detailLabel: detail?.label || ''
   };
 }
+function buildExamenFisicoFromPayload(payload = {}) {
+  const examen = {
+    peso: payload.pacienteExamenPeso,
+    talla: payload.pacienteExamenTalla,
+    perimetroCefalico: payload.pacienteExamenPc,
+    edadReferencia: payload.pacienteEdad,
+    observaciones: payload.pacienteExamenObservaciones,
+    dismorfias: payload.pacienteExamenDismorfias,
+    ojos: payload.pacienteExamenOjos,
+    nariz: payload.pacienteExamenNariz,
+    filtrum: payload.pacienteExamenFiltrum,
+    boca: payload.pacienteExamenBoca,
+    orejas: payload.pacienteExamenOrejas,
+    cuello: payload.pacienteExamenCuello,
+    torax: payload.pacienteExamenTorax,
+    columna: payload.pacienteExamenColumna,
+    abdomen: payload.pacienteExamenAbdomen,
+    genitales: payload.pacienteExamenGenitales,
+    otras: payload.pacienteExamenOtras,
+  };
+  Object.keys(examen).forEach((key) => {
+    const value = examen[key];
+    if (value == null || value === '') {
+      delete examen[key];
+    }
+  });
+  return examen;
+}
+
+function buildWizardInitialData(family, members = []) {
+  if (!family) return null;
+  const admin = { ...(family.intake?.administrativo || {}) };
+  const base = { ...admin };
+  const findMember = (predicate) => members.find(predicate) || null;
+  const proband = findMember((member) => member.rol === 'Proband' || member.filiatorios?.iniciales === 'A1');
+
+  const ensure = (field, value) => {
+    if (base[field] == null || base[field] === '') {
+      if (value != null && value !== '') {
+        base[field] = value;
+      }
+    }
+  };
+
+  ensure('agNumber', family.code);
+  ensure('motivoGroup', family.motivo?.groupId);
+  ensure('motivoDetail', family.motivo?.detailId);
+  ensure('motivoPaciente', family.motivoPaciente);
+  ensure('motivoDerivacion', family.motivoDerivacion);
+  ensure('provincia', family.provincia);
+  ensure('medicoAsignado', family.medicoAsignado);
+  ensure('pacienteDireccion', family.filiatoriosContacto?.direccion);
+  ensure('pacienteEmail', family.filiatoriosContacto?.email || proband?.contacto?.email);
+  ensure('pacienteTelefono', family.filiatoriosContacto?.telefono || proband?.contacto?.telefono);
+  ensure('pacienteNacimiento', proband?.nacimiento);
+  ensure('pacienteSexo', proband?.sexo);
+  ensure('pacienteProfesion', proband?.profesion);
+  ensure('pacienteAntecedentes', proband?.antecedentesPersonales);
+  ensure('pacienteObraSocial', proband?.obraSocial);
+
+  base.consanguinidad = base.consanguinidad || family.consanguinidad?.estado || 'no';
+  base.consanguinidadDetalle = base.consanguinidadDetalle || family.consanguinidad?.detalle || '';
+  base.obstetricosDescripcion = base.obstetricosDescripcion || family.antecedentesObstetricos || '';
+
+  const abuelos = family.abuelos || {};
+  ensure('abueloPaternoApellido', abuelos.paternos?.abuelo?.apellido);
+  ensure('abueloPaternoProcedencia', abuelos.paternos?.abuelo?.procedencia);
+  ensure('abuelaPaternaApellido', abuelos.paternos?.abuela?.apellido);
+  ensure('abuelaPaternaProcedencia', abuelos.paternos?.abuela?.procedencia);
+  ensure('abueloMaternoApellido', abuelos.maternos?.abuelo?.apellido);
+  ensure('abueloMaternoProcedencia', abuelos.maternos?.abuelo?.procedencia);
+  ensure('abuelaMaternaApellido', abuelos.maternos?.abuela?.apellido);
+  ensure('abuelaMaternaProcedencia', abuelos.maternos?.abuela?.procedencia);
+
+  return base;
+}
+
+
 
 function FooterBar({ onAnalytics }) {
   return (
@@ -455,12 +767,12 @@ function FooterBar({ onAnalytics }) {
 }
 
 export default function HomePage({ user, onLogout }) {
-  const { state, STORAGE_KEY, createFamily, createMember, addEvolution } = useCenagemStore();
+  const { state, STORAGE_KEY, createFamily, createMember, addEvolution, updateFamily, updateMember } = useCenagemStore();
   const { families, members, evolutions } = state;
 
   const [showNewCase, setShowNewCase] = useState(false);
   const [creatingCase, setCreatingCase] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState(() => formatISODateLocal(new Date()));
   const [agenda, setAgenda] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -482,7 +794,9 @@ export default function HomePage({ user, onLogout }) {
   });
   const [familyCodeInput, setFamilyCodeInput] = useState('');
   const [familyCodeFeedback, setFamilyCodeFeedback] = useState(null);
-
+  const [wizardFamilyId, setWizardFamilyId] = useState(null);
+  const [wizardBusy, setWizardBusy] = useState(false);
+  const [wizardActive, setWizardActive] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -492,10 +806,25 @@ export default function HomePage({ user, onLogout }) {
     }
   }, [agenda]);
 
+  useEffect(() => {
+    setWizardBusy(false);
+    setWizardActive(false);
+  }, [wizardFamilyId]);
+
   const membersById = useMemo(() => {
     const map = {};
     members.forEach((member) => {
       map[member.id] = member;
+    });
+    return map;
+  }, [members]);
+
+  const membersByFamilyId = useMemo(() => {
+    const map = {};
+    members.forEach((member) => {
+      if (!member.familyId) return;
+      if (!map[member.familyId]) map[member.familyId] = [];
+      map[member.familyId].push(member);
     });
     return map;
   }, [members]);
@@ -517,6 +846,29 @@ export default function HomePage({ user, onLogout }) {
     });
     return map;
   }, [families]);
+
+  const wizardFamily = wizardFamilyId ? familiesById[wizardFamilyId] : null;
+
+  const wizardFamilyMembers = useMemo(() => {
+    if (!wizardFamilyId) return [];
+    return membersByFamilyId[wizardFamilyId] || [];
+  }, [wizardFamilyId, membersByFamilyId]);
+
+  const wizardInitialData = useMemo(() => {
+    if (!wizardFamily) return null;
+    return buildWizardInitialData(wizardFamily, wizardFamilyMembers);
+  }, [wizardFamily, wizardFamilyMembers]);
+
+  const wizardReady = Boolean(wizardInitialData && wizardFamilyId);
+  const wizardPatientName = useMemo(() => {
+    if (!wizardInitialData) return '';
+    const name = [wizardInitialData.pacienteNombre, wizardInitialData.pacienteApellido]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    return name;
+  }, [wizardInitialData]);
+
   const agendaForSelectedDate = useMemo(() => {
     return agenda
       .filter((item) => item.date === selectedDate)
@@ -615,7 +967,36 @@ export default function HomePage({ user, onLogout }) {
   };
 
   const handleOpenFamily = (familyId) => {
+    const family = familiesById[familyId];
+    if (family?.intake?.wizardPending) {
+      setWizardBusy(false);
+      setWizardFamilyId(familyId);
+      setWizardActive(false);
+      return;
+    }
+    let changed = false;
+    const updated = agenda.map((item) => {
+      if (item.familyId === familyId && item.date === selectedDate && item.estado !== 'Atendido') {
+        changed = true;
+        return { ...item, estado: 'Atendido' };
+      }
+      return item;
+    });
+    if (changed) {
+      setAgenda(updated);
+    }
     window.location.hash = '#/family/' + familyId;
+  };
+
+  const startWizardForFamily = () => {
+    if (!wizardReady) return;
+    setWizardActive(true);
+  };
+
+  const handleCancelWizard = () => {
+    setWizardBusy(false);
+    setWizardActive(false);
+    setWizardFamilyId(null);
   };
 
   const handleGoToFamilyByCode = () => {
@@ -637,7 +1018,8 @@ export default function HomePage({ user, onLogout }) {
   const handleCreateCase = async (payload) => {
     setCreatingCase(true);
     try {
-      const code = normalizeAgCode(payload.agNumber) || generateNextCode(families);
+      const normalizedCode = normalizeAgCode(payload.agNumber);
+      const code = normalizedCode || generateNextCode(families);
       const motivo = buildMotivoMetadata(payload.motivoGroup, payload.motivoDetail);
       const tags = Array.from(new Set([
         motivo.groupId,
@@ -646,9 +1028,11 @@ export default function HomePage({ user, onLogout }) {
         motivo.detailLabel?.toLowerCase()
       ].filter(Boolean)));
       const medicoAsignado = (payload.medicoAsignado || '').trim();
+      const nowIso = new Date().toISOString();
+
       const family = createFamily({
         code,
-        provincia: payload.provincia,
+        provincia: payload.provincia || '',
         tags,
         motivo,
         motivoNotes: payload.motivoDerivacion,
@@ -661,8 +1045,8 @@ export default function HomePage({ user, onLogout }) {
           telefono: payload.pacienteTelefono
         },
         consanguinidad: {
-          estado: payload.consanguinidad,
-          detalle: payload.consanguinidadDetalle
+          estado: payload.consanguinidad || 'no',
+          detalle: payload.consanguinidadDetalle || ''
         },
         antecedentesObstetricos: payload.obstetricosDescripcion,
         abuelos: {
@@ -676,13 +1060,9 @@ export default function HomePage({ user, onLogout }) {
           }
         },
         intake: {
-          createdAt: new Date().toISOString(),
-          examen: {
-            peso: payload.pacienteExamenPeso,
-            talla: payload.pacienteExamenTalla,
-            perimetroCefalico: payload.pacienteExamenPc,
-            edadReferencia: payload.pacienteEdad
-          }
+          createdAt: nowIso,
+          wizardPending: true,
+          administrativo: payload
         },
         createdBy: user?.email || 'sistema'
       });
@@ -700,31 +1080,10 @@ export default function HomePage({ user, onLogout }) {
       const pacienteApellido = (payload.pacienteApellido || '').trim();
       const pacienteNombreCompleto = [pacienteNombre, pacienteApellido].filter(Boolean).join(' ');
 
-      const examenFisico = {
-        peso: payload.pacienteExamenPeso,
-        talla: payload.pacienteExamenTalla,
-        perimetroCefalico: payload.pacienteExamenPc,
-        edadReferencia: payload.pacienteEdad,
-        observaciones: payload.pacienteExamenObservaciones,
-        dismorfias: payload.pacienteExamenDismorfias,
-        ojos: payload.pacienteExamenOjos,
-        nariz: payload.pacienteExamenNariz,
-        filtrum: payload.pacienteExamenFiltrum,
-        boca: payload.pacienteExamenBoca,
-        orejas: payload.pacienteExamenOrejas,
-        cuello: payload.pacienteExamenCuello,
-        torax: payload.pacienteExamenTorax,
-        columna: payload.pacienteExamenColumna,
-        abdomen: payload.pacienteExamenAbdomen,
-        genitales: payload.pacienteExamenGenitales,
-        otras: payload.pacienteExamenOtras
-      };
-      Object.keys(examenFisico).forEach((key) => { if (!examenFisico[key]) delete examenFisico[key]; });
-
       const proband = createMember(family.id, {
         rol: 'Proband',
-        filiatorios: { iniciales: 'A1', nombreCompleto: pacienteNombreCompleto || pacienteNombre || 'Paciente sin nombre' },
-        nombre: pacienteNombreCompleto || pacienteNombre || 'Paciente sin nombre',
+        filiatorios: { iniciales: 'A1', nombreCompleto: pacienteNombreCompleto || 'Paciente sin nombre' },
+        nombre: pacienteNombreCompleto || 'Paciente sin nombre',
         contacto: { email: payload.pacienteEmail, telefono: payload.pacienteTelefono },
         direccion: payload.pacienteDireccion,
         diagnostico: motivoDiagnostico,
@@ -733,62 +1092,22 @@ export default function HomePage({ user, onLogout }) {
         profesion: payload.pacienteProfesion || undefined,
         obraSocial: payload.pacienteObraSocial || undefined,
         antecedentesPersonales: payload.pacienteAntecedentes || undefined,
-        examenFisico: Object.keys(examenFisico).length ? examenFisico : undefined,
         notas
       });
-
-      const b1Nombre = (payload.b1Nombre || '').trim();
-      const b1Apellido = (payload.b1Apellido || '').trim();
-      const b1NombreCompleto = [b1Nombre, b1Apellido].filter(Boolean).join(' ');
-      if (b1NombreCompleto) {
-        createMember(family.id, {
-          rol: 'B1',
-          filiatorios: { iniciales: 'B1', nombreCompleto: b1NombreCompleto },
-          nombre: b1NombreCompleto,
-          nacimiento: payload.b1Nacimiento || undefined,
-          contacto: { email: payload.b1Email || undefined },
-          profesion: payload.b1Profesion || undefined,
-          obraSocial: payload.b1ObraSocial || undefined,
-          antecedentesPersonales: payload.b1Antecedentes || undefined
-        });
-      }
-
-      const c1Nombre = (payload.c1Nombre || '').trim();
-      const c1Apellido = (payload.c1Apellido || '').trim();
-      const c1NombreCompleto = [c1Nombre, c1Apellido].filter(Boolean).join(' ');
-      if (c1NombreCompleto) {
-        createMember(family.id, {
-          rol: 'C1',
-          filiatorios: { iniciales: 'C1', nombreCompleto: c1NombreCompleto },
-          nombre: c1NombreCompleto,
-          nacimiento: payload.c1Nacimiento || undefined,
-          contacto: { email: payload.c1Email || undefined },
-          profesion: payload.c1Profesion || undefined,
-          obraSocial: payload.c1ObraSocial || undefined,
-          antecedentesPersonales: payload.c1Antecedentes || undefined,
-          obstetricos: {
-            gestas: payload.c1Gestas,
-            partos: payload.c1Partos,
-            abortos: payload.c1Abortos,
-            cesareas: payload.c1Cesareas
-          }
-        });
-      }
 
       const resumen = [
         `Motivo: ${motivoDiagnostico}`,
         payload.motivoPaciente ? `Paciente: ${payload.motivoPaciente}` : '',
         payload.motivoDerivacion ? `Derivación: ${payload.motivoDerivacion}` : '',
-        medicoAsignado ? `Profesional: ${medicoAsignado}` : '',
-        payload.pacienteExamenPeso ? `Peso: ${payload.pacienteExamenPeso} kg` : '',
-        payload.pacienteExamenTalla ? `Talla: ${payload.pacienteExamenTalla} cm` : '',
-        payload.pacienteExamenPc ? `PC: ${payload.pacienteExamenPc} cm` : ''
+        medicoAsignado ? `Profesional: ${medicoAsignado}` : ''
       ].filter(Boolean).join(' | ');
 
-      addEvolution(proband.id, resumen, user?.email || 'registro');
+      if (proband?.id) {
+        addEvolution(proband.id, resumen || 'Alta administrativa creada', user?.email || 'registro');
+      }
 
       setShowNewCase(false);
-      window.location.hash = `#/family/${family.id}`;
+      alert(`HC creada correctamente. Código asignado: ${code}`);
     } catch (error) {
       console.error('Error creando la HC', error);
       alert('No se pudo crear la HC. Revisá los datos e intentá nuevamente.');
@@ -797,8 +1116,198 @@ export default function HomePage({ user, onLogout }) {
     }
   };
 
+  const handleCompleteWizard = async (familyId, payload) => {
+    if (!familyId) return;
+    const family = familiesById[familyId];
+    if (!family) return;
+    setWizardBusy(true);
+    try {
+      const motivo = buildMotivoMetadata(payload.motivoGroup, payload.motivoDetail);
+      const tags = Array.from(new Set([
+        ...(Array.isArray(family.tags) ? family.tags : []),
+        motivo.groupId,
+        motivo.detailId,
+        motivo.groupLabel?.toLowerCase(),
+        motivo.detailLabel?.toLowerCase()
+      ].filter(Boolean)));
+      const medicoAsignado = (payload.medicoAsignado || family.medicoAsignado || '').trim();
+      const examenFisico = buildExamenFisicoFromPayload(payload);
+      const contactos = {
+        direccion: payload.pacienteDireccion || family.filiatoriosContacto?.direccion || '',
+        email: payload.pacienteEmail || family.filiatoriosContacto?.email || '',
+        telefono: payload.pacienteTelefono || family.filiatoriosContacto?.telefono || ''
+      };
+      const nowIso = new Date().toISOString();
+
+      const intakePrev = family.intake || {};
+      const intake = {
+        ...intakePrev,
+        administrativo: { ...(intakePrev.administrativo || {}), ...payload },
+        wizardPending: false,
+        wizardCompletedAt: nowIso,
+        wizardPayload: payload,
+        examen: Object.keys(examenFisico).length ? { ...examenFisico, edadReferencia: payload.pacienteEdad } : intakePrev.examen
+      };
+
+      const familyPatch = {
+        code: normalizeAgCode(payload.agNumber) || family.code,
+        provincia: payload.provincia || family.provincia || '',
+        tags,
+        motivo,
+        motivoNotes: payload.motivoDerivacion || family.motivoNotes,
+        motivoPaciente: payload.motivoPaciente || family.motivoPaciente,
+        motivoDerivacion: payload.motivoDerivacion || family.motivoDerivacion,
+        medicoAsignado,
+        filiatoriosContacto: contactos,
+        consanguinidad: {
+          estado: payload.consanguinidad || family.consanguinidad?.estado || 'no',
+          detalle: payload.consanguinidadDetalle || family.consanguinidad?.detalle || ''
+        },
+        antecedentesObstetricos: payload.obstetricosDescripcion || family.antecedentesObstetricos,
+        abuelos: {
+          paternos: {
+            abuelo: {
+              apellido: payload.abueloPaternoApellido || family.abuelos?.paternos?.abuelo?.apellido || '',
+              procedencia: payload.abueloPaternoProcedencia || family.abuelos?.paternos?.abuelo?.procedencia || ''
+            },
+            abuela: {
+              apellido: payload.abuelaPaternaApellido || family.abuelos?.paternos?.abuela?.apellido || '',
+              procedencia: payload.abuelaPaternaProcedencia || family.abuelos?.paternos?.abuela?.procedencia || ''
+            }
+          },
+          maternos: {
+            abuelo: {
+              apellido: payload.abueloMaternoApellido || family.abuelos?.maternos?.abuelo?.apellido || '',
+              procedencia: payload.abueloMaternoProcedencia || family.abuelos?.maternos?.abuelo?.procedencia || ''
+            },
+            abuela: {
+              apellido: payload.abuelaMaternaApellido || family.abuelos?.maternos?.abuela?.apellido || '',
+              procedencia: payload.abuelaMaternaProcedencia || family.abuelos?.maternos?.abuela?.procedencia || ''
+            }
+          }
+        },
+        intake
+      };
+
+      updateFamily(familyId, familyPatch);
+
+      const familyMembers = membersByFamilyId[familyId] || [];
+      const proband = familyMembers.find((member) => member.rol === 'Proband' || member.filiatorios?.iniciales === 'A1') || null;
+      const pacienteNombre = (payload.pacienteNombre || '').trim();
+      const pacienteApellido = (payload.pacienteApellido || '').trim();
+      const pacienteNombreCompleto = [pacienteNombre, pacienteApellido].filter(Boolean).join(' ') || proband?.nombre || 'Paciente sin nombre';
+
+      if (proband) {
+        const contacto = { ...(proband.contacto || {}) };
+        if (payload.pacienteEmail) contacto.email = payload.pacienteEmail;
+        if (payload.pacienteTelefono) contacto.telefono = payload.pacienteTelefono;
+        const probandPatch = {
+          filiatorios: { ...(proband.filiatorios || {}), nombreCompleto: pacienteNombreCompleto },
+          nombre: pacienteNombreCompleto,
+          contacto: Object.keys(contacto).length ? contacto : proband.contacto,
+          direccion: contactos.direccion || proband.direccion,
+          diagnostico: motivo.detailLabel || motivo.groupLabel || proband.diagnostico,
+          sexo: payload.pacienteSexo || proband.sexo || undefined,
+          nacimiento: payload.pacienteNacimiento || proband.nacimiento || undefined,
+          profesion: payload.pacienteProfesion || proband.profesion || undefined,
+          obraSocial: payload.pacienteObraSocial || proband.obraSocial || undefined,
+          antecedentesPersonales: payload.pacienteAntecedentes || proband.antecedentesPersonales || undefined,
+          examenFisico: Object.keys(examenFisico).length ? examenFisico : proband.examenFisico
+        };
+        updateMember(proband.id, probandPatch);
+      }
+
+      const upsertRelative = (role, initials, data, extra = {}) => {
+        const nombre = (data.nombre || '').trim();
+        const apellido = (data.apellido || '').trim();
+        const nombreCompleto = [nombre, apellido].filter(Boolean).join(' ');
+        if (!nombreCompleto) return;
+        const existing = familyMembers.find((member) => member.rol === role || member.filiatorios?.iniciales === initials) || null;
+        let contacto = existing?.contacto ? { ...existing.contacto } : {};
+        if (data.email) contacto.email = data.email;
+        if (data.telefono) contacto.telefono = data.telefono;
+        if (!Object.keys(contacto).length) contacto = existing?.contacto && Object.keys(existing.contacto).length ? existing.contacto : undefined;
+        const patch = {
+          rol: role,
+          filiatorios: { ...(existing?.filiatorios || {}), iniciales: initials, nombreCompleto },
+          nombre: nombreCompleto,
+          nacimiento: data.nacimiento || existing?.nacimiento || undefined,
+          profesion: data.profesion || existing?.profesion || undefined,
+          obraSocial: data.obraSocial || existing?.obraSocial || undefined,
+          antecedentesPersonales: data.antecedentes || existing?.antecedentesPersonales || undefined,
+        };
+        if (contacto) patch.contacto = contacto;
+        if (extra.obstetricos) {
+          const prev = existing?.obstetricos || {};
+          patch.obstetricos = {
+            gestas: extra.obstetricos.gestas ?? prev.gestas,
+            partos: extra.obstetricos.partos ?? prev.partos,
+            abortos: extra.obstetricos.abortos ?? prev.abortos,
+            cesareas: extra.obstetricos.cesareas ?? prev.cesareas,
+          };
+        }
+        if (existing) {
+          updateMember(existing.id, patch);
+        } else {
+          createMember(familyId, { ...patch, notas: [] });
+        }
+      };
+
+      upsertRelative('B1', 'B1', {
+        nombre: payload.b1Nombre,
+        apellido: payload.b1Apellido,
+        nacimiento: payload.b1Nacimiento,
+        email: payload.b1Email,
+        profesion: payload.b1Profesion,
+        obraSocial: payload.b1ObraSocial,
+        antecedentes: payload.b1Antecedentes,
+      });
+
+      upsertRelative('C1', 'C1', {
+        nombre: payload.c1Nombre,
+        apellido: payload.c1Apellido,
+        nacimiento: payload.c1Nacimiento,
+        email: payload.c1Email,
+        profesion: payload.c1Profesion,
+        obraSocial: payload.c1ObraSocial,
+        antecedentes: payload.c1Antecedentes,
+      }, {
+        obstetricos: {
+          gestas: payload.c1Gestas,
+          partos: payload.c1Partos,
+          abortos: payload.c1Abortos,
+          cesareas: payload.c1Cesareas,
+        },
+      });
+
+      const resumenPrimera = (payload.resumenPrimeraConsulta || '').trim();
+      const resumen = resumenPrimera || [
+        `Motivo: ${motivo.detailLabel || motivo.groupLabel || 'Motivo de consulta'}`,
+        payload.motivoPaciente ? `Paciente: ${payload.motivoPaciente}` : '',
+        payload.motivoDerivacion ? `Derivación: ${payload.motivoDerivacion}` : '',
+        medicoAsignado ? `Profesional: ${medicoAsignado}` : '',
+        payload.pacienteExamenPeso ? `Peso: ${payload.pacienteExamenPeso} kg` : '',
+        payload.pacienteExamenTalla ? `Talla: ${payload.pacienteExamenTalla} cm` : '',
+        payload.pacienteExamenPc ? `PC: ${payload.pacienteExamenPc} cm` : ''
+      ].filter(Boolean).join(' | ');
+
+      if (proband?.id) {
+        addEvolution(proband.id, resumen || 'Historia clínica inicial completada', user?.email || 'registro');
+      }
+
+      setWizardActive(false);
+      setWizardFamilyId(null);
+      window.location.hash = '#/family/' + familyId;
+    } catch (error) {
+      console.error('Error completando la HC', error);
+      alert('No se pudo guardar la información clínica. Intentá nuevamente.');
+    } finally {
+      setWizardBusy(false);
+    }
+  };
   return (
     <div className="p-6 grid gap-4">
+      
       <Header
         onLogout={onLogout}
         user={user}
@@ -814,9 +1323,14 @@ export default function HomePage({ user, onLogout }) {
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => setShowNewCase(true)} className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium">
-            + Nueva HC familiar
-          </button>
+          <button
+  onClick={() => setShowNewCase(true)}
+
+  className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium"
+>
+  + Nueva HC familiar
+</button>
+
           <button onClick={() => { window.location.hash = 'analytics'; }} className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm">
             Ver tableros
           </button>
@@ -843,37 +1357,108 @@ export default function HomePage({ user, onLogout }) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-4 pb-16">
-        <TodayAgenda
-          selectedDate={selectedDate}
-          onDateChange={setSelectedDate}
-          appointments={agendaForSelectedDate}
-          membersOptions={agendaMembersOptions}
-          membersById={membersById}
-          familiesById={familiesById}
-          onCreateAppointment={handleCreateAppointment}
-          onStatusChange={handleStatusChange}
-          onRemoveAppointment={handleRemoveAppointment}
-          onOpenFamily={handleOpenFamily}
-        />
-        <FollowUpPanel
-          items={followUps.slice(0, 5)}
-          membersById={membersById}
-          familiesById={familiesById}
-          onOpenFamily={handleOpenFamily}
-        />
-      </div>
-
-      <NewCaseModal
-        open={showNewCase}
-        busy={creatingCase}
-        onClose={() => setShowNewCase(false)}
-        onSubmit={handleCreateCase}
+      <TodayAgenda
+        selectedDate={selectedDate}
+        onDateChange={setSelectedDate}
+        appointments={agendaForSelectedDate}
+        membersOptions={agendaMembersOptions}
+        membersById={membersById}
+        familiesById={familiesById}
+        onCreateAppointment={handleCreateAppointment}
+        onStatusChange={handleStatusChange}
+        onRemoveAppointment={handleRemoveAppointment}
+        onOpenFamily={handleOpenFamily}
       />
+      <WeeklyAgendaBoard
+        agenda={agenda}
+        membersById={membersById}
+        familiesById={familiesById}
+        selectedDate={selectedDate}
+        onSelectDate={setSelectedDate}
+      />
+
+{showNewCase && (
+  <div className="fixed inset-0 z-40 overflow-auto bg-white">
+    <NewCaseCreate
+      currentUser={{ name: user?.displayName || user?.email }}
+      onCreate={handleCreateCase}
+      onCancel={() => setShowNewCase(false)}
+      busy={creatingCase}
+    />
+  </div>
+)}
+
+{wizardFamily && (
+  <div className="fixed inset-0 z-50 overflow-auto bg-white">
+    {wizardActive ? (
+      <NewCaseWizard
+        key={`wizard-${wizardFamilyId}`}
+        currentUser={{ name: user?.displayName || user?.email }}
+        busy={wizardBusy}
+        onSubmit={(payload) => handleCompleteWizard(wizardFamilyId, payload)}
+        onCancel={handleCancelWizard}
+        initialData={wizardInitialData || {}}
+        initialStep={2}
+        showAdministrativeStep={false}
+      />
+    ) : (
+      <div className="mx-auto flex min-h-screen max-w-xl items-center justify-center px-4 py-10">
+        <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-xl grid gap-4 text-center">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-slate-900">Ingresar a HC por primera vez</h2>
+            <p className="text-sm text-slate-600">Esta historia clínica solo tiene los datos administrativos. Completá el asistente clínico para finalizar el ingreso.</p>
+          </div>
+          {wizardPatientName && (
+            <div className="text-sm font-medium text-slate-700">Paciente: {wizardPatientName}</div>
+          )}
+          {!wizardReady && (
+            <div className="text-xs text-slate-500">Preparando datos administrativos...</div>
+          )}
+          <div className="flex justify-center gap-3">
+            <button
+              type="button"
+              onClick={handleCancelWizard}
+              className="px-4 py-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={startWizardForFamily}
+              disabled={!wizardReady}
+              className="px-4 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white text-sm font-medium disabled:opacity-50"
+            >
+              Ingresar a HC por primera vez
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+)}
+
       <FooterBar onAnalytics={() => { window.location.hash = 'analytics'; }} />
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
