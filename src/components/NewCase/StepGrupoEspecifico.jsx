@@ -1,265 +1,250 @@
-import React from 'react';
-import Grupo_DI_RM from './groups/Grupo_DI_RM';
-import Grupo_Talla from './groups/Grupo_Talla';
-import Grupo_Dismorfias from './groups/Grupo_Dismorfias';
-import Grupo_Prenatal from './groups/Grupo_Prenatal';
-import Grupo_Fertilidad from './groups/Grupo_Fertilidad';
-import Grupo_Onco from './groups/Grupo_Onco';
-import Grupo_Monogenica from './groups/Grupo_Monogenica';
-import Grupo_Otros from './groups/Grupo_Otros';
+import React, { useMemo, useCallback } from 'react';
+import { GROUP_GUIDES } from './groupGuides';
 
-const MAP = {
-  di_rm: Grupo_DI_RM,
-  talla: Grupo_Talla,
-  dismorfias: Grupo_Dismorfias,
-  prenatal: Grupo_Prenatal,
-  fertilidad: Grupo_Fertilidad,
-  onco: Grupo_Onco,
-  monogenica: Grupo_Monogenica,
-  otros: Grupo_Otros,
+const baseInputClass = 'rounded-xl border border-slate-300 px-3 py-2 text-sm';
+const baseTextareaClass = `${baseInputClass} min-h-[80px]`;
+const baseSelectClass = baseInputClass;
+const baseCheckboxClass = 'h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-500';
+
+const getCheckboxValues = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
 };
 
-const DEFAULT_CONFIG = {
-  estudios: {
-    show: true,
-    primerLabel: 'Primer nivel',
-    primerPlaceholder: 'Hemograma, función tiroidea (TSH/T4L), CK, perfil hepático/renal, audiometría, fondo de ojo, EEG, neuroimágenes…',
-    segundoLabel: 'Segundo nivel',
-    segundoPlaceholder: 'Cariotipo, array-CGH, estudio de X frágil, paneles génicos…',
-    terceroLabel: 'Tercer nivel / dirigidos',
-    terceroPlaceholder: 'Exoma clínico, metabolómica, estudios mitocondriales o epigenéticos según sospecha',
-    notasLabel: 'Interpretación y notas',
-    notasPlaceholder: 'Hallazgos positivos/negativos, estudios pendientes, coordinación con otros servicios',
-  },
-  sintesis: {
-    show: true,
-    title: 'Síntesis diagnóstica',
-    clasificacionLabel: 'Clasificación funcional',
-    sindromicoLabel: 'Caracterización',
-    reversibilidadLabel: 'Reversibilidad parcial',
-    etiologiaLabel: 'Etiología probable',
-  },
-  plan: {
-    show: true,
-    title: 'Plan y seguimiento',
-    derivacionesLabel: 'Derivaciones propuestas',
-    derivacionesPlaceholder: 'Genética, neurología, fonoaudiología, estimulación temprana, psicopedagogía…',
-    consejeriaLabel: 'Consejería genética familiar',
-    consejeriaPlaceholder: 'Riesgos de recurrencia, recomendaciones para la familia',
-    controlesLabel: 'Controles y seguimiento',
-    controlesPlaceholder: 'Periodicidad, monitoreo de crecimiento, conducta, aprendizaje',
-    registroLabel: 'Registro fenotípico / HPO',
-    registroPlaceholder: 'Datos ingresados en RENAC/ECLAM/CENAGEM, términos HPO relevantes',
-  },
+const FieldControl = ({ field, value, onValueChange }) => {
+  const rawValue = value[field.name];
+  const handleTextChange = useCallback(
+    (event) => {
+      onValueChange(field.name, event.target.value);
+    },
+    [field.name, onValueChange],
+  );
+
+  if (field.component === 'checkbox-group') {
+    const selectedValues = getCheckboxValues(rawValue);
+    const toggleOption = useCallback(
+      (optionValue) => {
+        const current = getCheckboxValues(value[field.name]);
+        const exists = current.includes(optionValue);
+        const nextValue = exists
+          ? current.filter((item) => item !== optionValue)
+          : [...current, optionValue];
+        onValueChange(field.name, nextValue);
+      },
+      [field.name, onValueChange, value],
+    );
+    const wrapperClass = field.optionsWrapperClass
+      ? field.optionsWrapperClass
+      : 'grid gap-2';
+    const itemClass = field.optionClassName
+      ? field.optionClassName
+      : 'flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700';
+    return (
+      <div className={wrapperClass}>
+        {(field.options || []).map((option) => (
+          <label key={option.value} className={itemClass}>
+            <input
+              type="checkbox"
+              className={baseCheckboxClass}
+              value={option.value}
+              checked={selectedValues.includes(option.value)}
+              onChange={() => toggleOption(option.value)}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (field.component === 'radio-group') {
+    const currentValue = typeof rawValue === 'string' ? rawValue : '';
+    const itemClass = field.optionClassName
+      ? field.optionClassName
+      : 'flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700';
+    const handleSelect = useCallback(
+      (optionValue) => {
+        onValueChange(field.name, optionValue);
+      },
+      [field.name, onValueChange],
+    );
+    return (
+      <div className={field.optionsWrapperClass || 'grid gap-2'}>
+        {(field.options || []).map((option) => (
+          <label key={option.value} className={itemClass}>
+            <input
+              type="radio"
+              className={baseCheckboxClass}
+              name={field.name}
+              value={option.value}
+              checked={currentValue === option.value}
+              onChange={() => handleSelect(option.value)}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (field.component === 'checkbox') {
+    const checked = Boolean(rawValue);
+    return (
+      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          className={baseCheckboxClass}
+          checked={checked}
+          onChange={(event) => onValueChange(field.name, event.target.checked)}
+        />
+        <span>{field.optionLabel || field.label}</span>
+      </label>
+    );
+  }
+
+  const baseClass = field.component === 'textarea'
+    ? baseTextareaClass
+    : field.component === 'select'
+      ? baseSelectClass
+      : baseInputClass;
+  const className = field.className ? `${baseClass} ${field.className}` : baseClass;
+  const fieldValue = rawValue ?? '';
+
+  if (field.component === 'textarea') {
+    return (
+      <textarea
+        className={className}
+        value={fieldValue}
+        placeholder={field.placeholder}
+        onChange={handleTextChange}
+      />
+    );
+  }
+  if (field.component === 'select') {
+    return (
+      <select className={className} value={fieldValue} onChange={handleTextChange}>
+        {(field.options || []).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  return (
+    <input
+      type={field.inputType || 'text'}
+      className={className}
+      value={fieldValue}
+      placeholder={field.placeholder}
+      onChange={handleTextChange}
+    />
+  );
 };
 
-const CONFIG_OVERRIDES = {
-  prenatal: {
-    estudios: { show: false },
-    sintesis: { show: false },
-    plan: { show: false },
-  },
-  fertilidad: {
-    estudios: {
-      primerPlaceholder: 'Perfil hormonal basal (FSH/LH/PRL), espermograma, ecografía transvaginal, AMH…',
-      segundoPlaceholder: 'Cariotipo, X frágil, microdeleciones del cromosoma Y, paneles de portadores, trombofilias hereditarias…',
-      terceroPlaceholder: 'PGT-M/PGT-A, secuenciación expandida, estudios metabólicos específicos…',
-      notasPlaceholder: 'Resumen de hallazgos, estudios pendientes, coordinación con centros de reproducción asistida',
-    },
-    sintesis: { show: false },
-    plan: {
-      derivacionesPlaceholder: 'Endocrinología reproductiva, reproducción asistida, psicología, andrología…',
-      consejeriaPlaceholder: 'Riesgos de recurrencia, alternativas reproductivas, preservación de fertilidad',
-      controlesPlaceholder: 'Seguimiento con centros de fertilidad, monitoreo hormonal, reevaluaciones periódicas',
-      registroPlaceholder: 'Consentimientos, registros compartidos con centros de fertilidad, documentación clínica',
-    },
-  },
-  onco: {
-    estudios: {
-      primerLabel: 'Historia clínica / estudios de base',
-      primerPlaceholder: 'Diagnósticos oncológicos previos, anatomía patológica, inmunohistoquímica, imágenes iniciales…',
-      segundoLabel: 'Estudios genéticos realizados',
-      segundoPlaceholder: 'Paneles multigén, BRCA1/2, genes MMR, TP53, CHEK2, análisis de predisposición hereditaria…',
-      terceroLabel: 'Estudios dirigidos / tumorales',
-      terceroPlaceholder: 'Secuenciación tumoral, LOH, NGS somático, RNA, pruebas funcionales complementarias…',
-      notasPlaceholder: 'Interpretación de variantes, coordinación con protocolos, estudios pendientes en familiares',
-    },
-    sintesis: { show: false },
-    plan: {
-      derivacionesPlaceholder: 'Oncología clínica, mastología, gastroenterología, consejería genética, psicooncología…',
-      consejeriaPlaceholder: 'Riesgo individual y familiar, testing en cascada, decisiones terapéuticas compartidas',
-      controlesPlaceholder: 'Tamizajes recomendados, cronogramas de vigilancia, seguimientos interdisciplinarios',
-      registroPlaceholder: 'Registro de variantes, probandos familiares, bases oncológicas institucionales',
-    },
-  },
+const GroupRenderer = ({ sectionId, group, value, onValueChange }) => {
+  const gridClass = group.columns ? `grid gap-3 md:grid-cols-${group.columns}` : 'grid gap-3';
+  const groupKey = group.id || group.heading || `${sectionId}-group-${group.fields?.[0]?.name || 'group'}`;
+
+  return (
+    <div key={groupKey} className="grid gap-3">
+      {group.heading ? (
+        <span className="text-xs font-semibold text-slate-600">{group.heading}</span>
+      ) : null}
+      <div className={gridClass}>
+        {(group.fields || []).map((field) => (
+          <label
+            key={`${groupKey}-${field.name}`}
+            className={`flex flex-col gap-1 ${field.colSpan ? field.colSpan : ''}`}
+          >
+            {field.label ? <span className="text-xs text-slate-500">{field.label}</span> : null}
+            <FieldControl field={field} value={value} onValueChange={onValueChange} />
+            {field.helper ? <span className="text-[11px] text-slate-400">{field.helper}</span> : null}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 };
 
-const buildConfig = (groupId) => {
-  const override = CONFIG_OVERRIDES[groupId] || {};
-  return {
-    estudios: { ...DEFAULT_CONFIG.estudios, ...override.estudios },
-    sintesis: { ...DEFAULT_CONFIG.sintesis, ...override.sintesis },
-    plan: { ...DEFAULT_CONFIG.plan, ...override.plan },
-  };
+const SectionRenderer = ({ section, value, onValueChange }) => {
+  const Wrapper = ({ children }) => (
+    section.wrapper ? <div className={section.wrapper}>{children}</div> : <section className="grid gap-4">{children}</section>
+  );
+  const sectionKey = section.id || section.title || `section-${section.groups?.length || 0}`;
+
+  return (
+    <Wrapper>
+      {section.title ? <h2 className="text-sm font-semibold text-slate-700">{section.title}</h2> : null}
+      {section.description ? (
+        <p className="text-xs text-slate-500">{section.description}</p>
+      ) : null}
+      {(section.groups || []).map((group) => (
+        <GroupRenderer
+          key={group.id || group.heading || `${sectionKey}-${group.fields?.[0]?.name || 'group'}`}
+          sectionId={sectionKey}
+          group={group}
+          value={value}
+          onValueChange={onValueChange}
+        />
+      ))}
+      {Array.isArray(section.fields) && section.fields.length > 0 ? (
+        <GroupRenderer
+          sectionId={sectionKey}
+          group={{ id: `${sectionKey}-fields`, fields: section.fields }}
+          value={value}
+          onValueChange={onValueChange}
+        />
+      ) : null}
+    </Wrapper>
+  );
 };
 
 export default function StepGrupoEspecifico({ groupId, value = {}, onChange }) {
-  const Comp = MAP[groupId] || null;
-  const config = buildConfig(groupId);
-  const set = (field) => (e) => onChange?.(field, e.target.value);
+  const sections = useMemo(
+    () => (groupId ? (GROUP_GUIDES[groupId]?.sections || []) : []),
+    [groupId],
+  );
+
+  const handleValueChange = useCallback(
+    (field, newValue) => {
+      onChange?.(field, newValue);
+    },
+    [onChange],
+  );
+
+  if (!groupId) {
+    return (
+      <section className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
+        Seleccioná un motivo específico para ver las preguntas dirigidas a ese motivo.
+      </section>
+    );
+  }
+
+  if (sections.length === 0) {
+    return (
+      <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-sm text-amber-700">
+        No hay preguntas específicas registradas para este motivo. Podés continuar al siguiente paso.
+      </section>
+    );
+  }
 
   return (
     <div className="grid gap-6">
-      {config.estudios.show && (
-        <section className="grid gap-4">
-          <h2 className="text-sm font-semibold text-slate-700">Estudios complementarios</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.estudios.primerLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.estudiosPrimerNivel || ''}
-                onChange={set('estudiosPrimerNivel')}
-                placeholder={config.estudios.primerPlaceholder}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.estudios.segundoLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.estudiosSegundoNivel || ''}
-                onChange={set('estudiosSegundoNivel')}
-                placeholder={config.estudios.segundoPlaceholder}
-              />
-            </label>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.estudios.terceroLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.estudiosTercerNivel || ''}
-                onChange={set('estudiosTercerNivel')}
-                placeholder={config.estudios.terceroPlaceholder}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.estudios.notasLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.estudiosComplementariosNotas || ''}
-                onChange={set('estudiosComplementariosNotas')}
-                placeholder={config.estudios.notasPlaceholder}
-              />
-            </label>
-          </div>
-        </section>
-      )}
-
-      {config.sintesis.show && (
-        <section className="grid gap-4">
-          <h2 className="text-sm font-semibold text-slate-700">{config.sintesis.title}</h2>
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.sintesis.clasificacionLabel}</span>
-              <select
-                className="rounded-xl border border-slate-300 px-3 py-2"
-                value={value.sintesisClasificacion || ''}
-                onChange={set('sintesisClasificacion')}
-              >
-                <option value="">Seleccionar…</option>
-                <option value="leve">Leve</option>
-                <option value="moderado">Moderado</option>
-                <option value="grave">Grave</option>
-                <option value="profundo">Profundo</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.sintesis.sindromicoLabel}</span>
-              <select
-                className="rounded-xl border border-slate-300 px-3 py-2"
-                value={value.sintesisSindromico || ''}
-                onChange={set('sintesisSindromico')}
-              >
-                <option value="">Seleccionar…</option>
-                <option value="sindromico">Sindrómico</option>
-                <option value="no_sindromico">No sindrómico</option>
-                <option value="indeterminado">Indeterminado</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.sintesis.reversibilidadLabel}</span>
-              <input
-                className="rounded-xl border border-slate-300 px-3 py-2"
-                value={value.sintesisReversibilidad || ''}
-                onChange={set('sintesisReversibilidad')}
-                placeholder="Déficits sensoriales, hipotiroidismo, intervenciones posibles"
-              />
-            </label>
-          </div>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-slate-500">{config.sintesis.etiologiaLabel}</span>
-            <textarea
-              className="rounded-xl border border-slate-300 px-3 py-2 min-h-[90px]"
-              value={value.sintesisEtiologia || ''}
-              onChange={set('sintesisEtiologia')}
-              placeholder="Genética, metabólica, estructural, ambiental o mixta. Describir razonamiento clínico."
-            />
-          </label>
-        </section>
-      )}
-
-      {config.plan.show && (
-        <section className="grid gap-4">
-          <h2 className="text-sm font-semibold text-slate-700">{config.plan.title}</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.plan.derivacionesLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.planDerivaciones || ''}
-                onChange={set('planDerivaciones')}
-                placeholder={config.plan.derivacionesPlaceholder}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.plan.consejeriaLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.planConsejeriaGenetica || ''}
-                onChange={set('planConsejeriaGenetica')}
-                placeholder={config.plan.consejeriaPlaceholder}
-              />
-            </label>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.plan.controlesLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.planControles || ''}
-                onChange={set('planControles')}
-                placeholder={config.plan.controlesPlaceholder}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">{config.plan.registroLabel}</span>
-              <textarea
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[80px]"
-                value={value.planRegistroHpo || ''}
-                onChange={set('planRegistroHpo')}
-                placeholder={config.plan.registroPlaceholder}
-              />
-            </label>
-          </div>
-        </section>
-      )}
-
-      {Comp ? (
-        <section className="grid gap-4">
-          <Comp value={value} onChange={onChange} />
-        </section>
-      ) : null}
+      {sections.map((section) => (
+        <SectionRenderer
+          key={section.id || section.title}
+          section={section}
+          value={value}
+          onValueChange={handleValueChange}
+        />
+      ))}
     </div>
   );
 }

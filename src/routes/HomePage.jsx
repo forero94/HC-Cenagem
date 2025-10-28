@@ -3,641 +3,20 @@
 // ===============================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCenagemStore } from '@/store/cenagemStore';
+import { cenagemApi } from '@/lib/apiClient';
 import NewCaseCreate from '@/components/NewCaseCreate.jsx';
 import NewCaseWizard from '@/components/NewCase/NewCaseWizard.jsx';
 import { MOTIVO_CONSULTA_GROUPS } from '@/lib/motivosConsulta.js';
+import CaseAccessPanel from '@/modules/home/components/CaseAccessPanel.jsx';
+import FooterBar from '@/modules/home/components/FooterBar.jsx';
+import HomeHeader from '@/modules/home/components/HomeHeader.jsx';
+import MetricsBoard from '@/modules/home/components/MetricsBoard.jsx';
+import TodayAgenda from '@/modules/home/components/TodayAgenda.jsx';
+import WeeklyAgendaBoard from '@/modules/home/components/WeeklyAgendaBoard.jsx';
+import { normalizeFamilyCodeInput, formatFriendlyDate, formatISODateLocal } from '@/modules/home/agenda';
+import { useAgenda } from '@/modules/home/useAgenda';
 
 const uidLocal = () => Math.random().toString(36).slice(2, 10);
-const AGENDA_STORAGE_KEY = 'cenagem-agenda-v1';
-const DEFAULT_DAY_SLOTS = ['08:30', '09:30', '11:00', '13:00', '15:00'];
-const APPOINTMENT_STATUS_COLORS = {
-  Pendiente: 'bg-amber-100 text-amber-700',
-  'En sala': 'bg-blue-100 text-blue-700',
-  Atendido: 'bg-emerald-100 text-emerald-700',
-  Ausente: 'bg-rose-100 text-rose-700',
-};
-
-function getStatusBadgeColor(status) {
-  return APPOINTMENT_STATUS_COLORS[status] || 'bg-slate-200 text-slate-600';
-}
-
-function MetricCard({ label, value, hint }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-1">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="text-2xl font-semibold">{value}</div>
-      {hint && <div className="text-[11px] text-slate-500">{hint}</div>}
-    </div>
-  );
-}
-
-function Header({ title, user, onLogout, onReset }) {
-  return (
-    <div className="flex items-center justify-between">
-      <div>
-        <h1 className="text-lg font-semibold">{title}</h1>
-        <p className="text-xs text-slate-500">Sesión: {user?.email}</p>
-      </div>
-      <div className="flex items-center gap-2">
-        <button onClick={onReset} className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50">Restablecer demo</button>
-        <button onClick={onLogout} className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50">Salir</button>
-      </div>
-    </div>
-  );
-}
-
-function formatFriendlyDate(isoDate) {
-  if (!isoDate) return '';
-  const parts = isoDate.split('-').map(Number);
-  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return isoDate;
-  const [year, month, day] = parts;
-  const date = new Date(year, month - 1, day);
-  return date.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
-function formatISODateLocal(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function startOfWeekMonday(baseDate) {
-  const date = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
-  return date;
-}
-
-function addDays(baseDate, amount) {
-  const date = new Date(baseDate.getTime());
-  date.setDate(date.getDate() + amount);
-  return date;
-}
-
-function buildWeeklyAgendaData(agenda = [], slots = DEFAULT_DAY_SLOTS, weeksCount = 6) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayIso = formatISODateLocal(today);
-  const baseMonday = startOfWeekMonday(today);
-
-  const timesFromAgenda = agenda.map((item) => item.time).filter(Boolean);
-  const slotSet = new Set([...slots, ...timesFromAgenda]);
-  const sortedSlots = Array.from(slotSet).sort((a, b) => a.localeCompare(b));
-
-  const weeks = [];
-
-  for (let index = 0; index < weeksCount; index += 1) {
-    const weekStart = addDays(baseMonday, index * 7);
-    const weekEnd = addDays(weekStart, 6);
-    const days = [];
-    let availableCount = 0;
-
-    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
-      const dayDate = addDays(weekStart, dayOffset);
-      const isoDate = formatISODateLocal(dayDate);
-      const appointments = agenda
-        .filter((item) => item.date === isoDate)
-        .map((item) => ({ ...item }))
-        .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-
-      const usedSlots = new Set(appointments.map((item) => item.time).filter(Boolean));
-      const availableSlots = sortedSlots.filter((slot) => !usedSlots.has(slot));
-      const isPast = dayDate.getTime() < today.getTime();
-      const futureSlots = isPast ? [] : availableSlots;
-      availableCount += futureSlots.length;
-
-      days.push({
-        isoDate,
-        date: dayDate,
-        label: dayDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' }),
-        appointments,
-        availableSlots,
-        futureSlots,
-        isPast,
-        isToday: isoDate === todayIso,
-      });
-    }
-
-    weeks.push({
-      startDate: weekStart,
-      endDate: weekEnd,
-      startLabel: weekStart.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
-      endLabel: weekEnd.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
-      days,
-      availableCount,
-    });
-  }
-
-  return weeks;
-}
-
-function getMemberDisplayName(member) {
-  if (!member) return 'Paciente sin nombre';
-  return (
-    member.filiatorios?.nombreCompleto ||
-    member.nombre ||
-    member.filiatorios?.iniciales ||
-    member.rol ||
-    'Paciente'
-  );
-}
-
-function seedAgendaFromMembers(members = []) {
-  const todayIso = formatISODateLocal(new Date());
-  const slots = DEFAULT_DAY_SLOTS;
-  return members
-    .filter((m) => m.rol === 'Proband')
-    .slice(0, slots.length)
-    .map((member, index) => ({
-      id: `seed-${member.id}-${index}`,
-      memberId: member.id,
-      familyId: member.familyId,
-      date: todayIso,
-      time: slots[index] || slots[slots.length - 1] || '15:00',
-      motivo: member.diagnostico || 'Consulta de seguimiento',
-      profesional: index % 2 === 0 ? 'Dra. López' : 'Dr. Sánchez',
-      notas: '',
-      estado: 'Pendiente'
-    }));
-}
-
-function normalizeFamilyCodeInput(value) {
-  if (!value) return '';
-  let cleaned = value.trim().toUpperCase();
-  if (!cleaned) return '';
-  cleaned = cleaned.replace(/^HC\s*/i, '');
-  if (cleaned.startsWith('AG-')) {
-    const digits = cleaned.slice(3).replace(/\D/g, '');
-    return digits ? `AG-${digits.padStart(4, '0')}` : '';
-  }
-  if (cleaned.startsWith('FAM-')) {
-    const digits = cleaned.slice(4).replace(/\D/g, '');
-    return digits ? `FAM-${digits.padStart(4, '0')}` : '';
-  }
-  const digits = cleaned.replace(/\D/g, '');
-  if (!digits) return '';
-  return `AG-${digits.padStart(4, '0')}`;
-}
-
-function AgendaForm({ membersOptions, familiesById, defaultDate, onSubmit, onCancel }) {
-  const [memberId, setMemberId] = useState(membersOptions[0]?.id || '');
-  const [date, setDate] = useState(defaultDate);
-  const defaultTime = DEFAULT_DAY_SLOTS[0] || '09:00';
-  const [time, setTime] = useState(defaultTime);
-  const [profesional, setProfesional] = useState('');
-  const [motivo, setMotivo] = useState(membersOptions[0]?.diagnostico || 'Consulta de seguimiento');
-  const [motivoPersonalizado, setMotivoPersonalizado] = useState(false);
-  const [notas, setNotas] = useState('');
-
-  useEffect(() => {
-    if (!membersOptions.find((opt) => opt.id === memberId)) {
-      setMemberId(membersOptions[0]?.id || '');
-    }
-  }, [membersOptions, memberId]);
-
-  useEffect(() => {
-    const selected = membersOptions.find((opt) => opt.id === memberId);
-    if (!motivoPersonalizado) {
-      setMotivo(selected?.diagnostico || 'Consulta de seguimiento');
-    }
-  }, [memberId, membersOptions, motivoPersonalizado]);
-
-  const handleMotivoChange = (value) => {
-    setMotivo(value);
-    setMotivoPersonalizado(true);
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (!memberId) return;
-
-    onSubmit({
-      memberId,
-      date,
-      time,
-      profesional: profesional.trim(),
-      motivo: motivo.trim(),
-      notas: notas.trim()
-    });
-
-    setTime(defaultTime);
-    setProfesional('');
-    setNotas('');
-    setMotivoPersonalizado(false);
-  };
-
-  const hasMembers = membersOptions.length > 0;
-
-  return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-4 flex flex-col gap-3">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-          Paciente
-          <select
-            value={memberId}
-            onChange={(e) => { setMemberId(e.target.value); setMotivoPersonalizado(false); }}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-            disabled={!hasMembers}
-          >
-            {!hasMembers && <option value="">Sin pacientes disponibles</option>}
-            {membersOptions.map((opt) => {
-              const family = familiesById[opt.familyId];
-              const familyLabel = family ? `HC ${family.code}` : 'HC sin código';
-              return (
-                <option key={opt.id} value={opt.id}>
-                  {getMemberDisplayName(opt)} · {familyLabel}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-        <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-          Fecha
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-          />
-        </label>
-        <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-          Hora
-          <input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-          />
-        </label>
-        <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-          Profesional
-          <input
-            type="text"
-            value={profesional}
-            onChange={(e) => setProfesional(e.target.value)}
-            placeholder="Ej. Dra. González"
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-          />
-        </label>
-      </div>
-      <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-        Motivo de la consulta
-        <input
-          type="text"
-          value={motivo}
-          onChange={(e) => handleMotivoChange(e.target.value)}
-          placeholder="Motivo principal"
-          className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-        />
-      </label>
-      <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-        Notas internas
-        <textarea
-          value={notas}
-          onChange={(e) => setNotas(e.target.value)}
-          placeholder="Recordatorios para el equipo (opcional)"
-          className="px-3 py-2 rounded-xl border border-slate-300 text-sm min-h-[80px]"
-        />
-      </label>
-      <div className="flex flex-wrap gap-2">
-        <button type="submit" className="px-4 py-2 rounded-xl border border-slate-300 bg-slate-900 text-white text-sm font-medium disabled:opacity-60" disabled={!hasMembers}>
-          Guardar turno
-        </button>
-        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm">
-          Cancelar
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function AgendaList({ items, membersById, familiesById, onStatusChange, onRemove, onOpenFamily }) {
-  if (!items.length) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
-        No hay turnos para esta fecha. Agendá el próximo paciente para empezar el día.
-      </div>
-    );
-  }
-
-  const statusOptions = ['Pendiente', 'En sala', 'Atendido', 'Ausente'];
-
-  return (
-    <div className="flex flex-col gap-3">
-      {items.map((item) => {
-        const member = membersById[item.memberId];
-        const family = familiesById[item.familyId];
-        if (!member || !family) return null;
-
-        const name = getMemberDisplayName(member);
-        const statusColor = getStatusBadgeColor(item.estado);
-
-        return (
-          <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">{item.time || 'Sin horario'} hs</div>
-                <div className="text-base font-semibold text-slate-900">{name}</div>
-                <div className="text-[11px] text-slate-500">HC {family.code} · {family.provincia || 'Provincia sin cargar'}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[11px] font-medium px-2 py-1 rounded-full ${statusColor}`}>{item.estado}</span>
-                <select
-                  value={item.estado}
-                  onChange={(e) => onStatusChange(item.id, e.target.value)}
-                  className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
-                >
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {item.motivo && <div className="text-sm text-slate-700">{item.motivo}</div>}
-            <div className="text-xs text-slate-500">Profesional: {item.profesional || 'Sin asignar'}</div>
-            {item.notas && <div className="text-xs text-slate-500 border-t border-dashed border-slate-200 pt-2">{item.notas}</div>}
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => onOpenFamily(item.familyId)} className="text-xs px-3 py-1 rounded-lg border border-slate-300 hover:bg-slate-50">
-                Abrir HC
-              </button>
-              <button onClick={() => onRemove(item.id)} className="text-xs px-3 py-1 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50">
-                Eliminar
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TodayAgenda({
-  selectedDate,
-  onDateChange,
-  appointments,
-  membersOptions,
-  membersById,
-  familiesById,
-  onCreateAppointment,
-  onStatusChange,
-  onRemoveAppointment,
-  onOpenFamily
-}) {
-  const [adding, setAdding] = useState(false);
-
-  useEffect(() => {
-    if (!adding) return;
-    const handler = (event) => {
-      if (event.key === 'Escape') setAdding(false);
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [adding]);
-
-  const friendlyDate = formatFriendlyDate(selectedDate);
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-slate-900">Agenda del día</div>
-          <div className="text-[11px] text-slate-500">Consultas programadas para {friendlyDate || 'la fecha seleccionada'}.</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => onDateChange(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-          />
-          <button
-            onClick={() => setAdding((prev) => !prev)}
-            className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium"
-          >
-            {adding ? 'Cerrar formulario' : '+ Nuevo turno'}
-          </button>
-        </div>
-      </div>
-      {adding && (
-        <AgendaForm
-          membersOptions={membersOptions}
-          familiesById={familiesById}
-          defaultDate={selectedDate}
-          onSubmit={(values) => {
-            onCreateAppointment(values);
-            setAdding(false);
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      )}
-      <AgendaList
-        items={appointments}
-        membersById={membersById}
-        familiesById={familiesById}
-        onStatusChange={onStatusChange}
-        onRemove={onRemoveAppointment}
-        onOpenFamily={onOpenFamily}
-      />
-    </div>
-  );
-}
-
-function WeeklyAgendaBoard({ agenda, membersById, familiesById, selectedDate, onSelectDate }) {
-  const weeks = useMemo(() => buildWeeklyAgendaData(agenda), [agenda]);
-  const firstAvailableIndex = useMemo(
-    () => weeks.findIndex((week) => week.availableCount > 0),
-    [weeks],
-  );
-  const [weekIndex, setWeekIndex] = useState(() => (firstAvailableIndex >= 0 ? firstAvailableIndex : 0));
-  const autoSnapRef = useRef(false);
-
-  useEffect(() => {
-    if (!autoSnapRef.current && firstAvailableIndex >= 0) {
-      setWeekIndex(firstAvailableIndex);
-      autoSnapRef.current = true;
-    }
-  }, [firstAvailableIndex]);
-
-  useEffect(() => {
-    const weeksLength = weeks.length;
-    if (weeksLength === 0) {
-      setWeekIndex(0);
-      return;
-    }
-    if (weekIndex >= weeksLength) {
-      setWeekIndex(Math.max(0, weeksLength - 1));
-    }
-  }, [weeks.length, weekIndex]);
-
-  if (!weeks.length) {
-    return null;
-  }
-
-  const week = weeks[Math.min(weekIndex, weeks.length - 1)];
-
-  const nextAvailableSlot = useMemo(() => {
-    for (const weekItem of weeks) {
-      for (const day of weekItem.days) {
-        if (day.futureSlots.length > 0) {
-          const nextDateLabel = day.date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'short' });
-          return {
-            date: day.isoDate,
-            slot: day.futureSlots[0],
-            label: nextDateLabel,
-          };
-        }
-      }
-    }
-    return null;
-  }, [weeks]);
-
-  const handlePrevWeek = () => setWeekIndex((prev) => Math.max(prev - 1, 0));
-  const handleNextWeek = () => setWeekIndex((prev) => Math.min(prev + 1, weeks.length - 1));
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <div className="text-sm font-semibold text-slate-900">Turnos por semana</div>
-          <div className="text-[11px] text-slate-500">
-            Semana del {week.startLabel} al {week.endLabel}.{' '}
-            {week.availableCount > 0
-              ? `${week.availableCount} turnos libres.`
-              : 'Sin disponibilidad futura en esta semana.'}
-          </div>
-          {nextAvailableSlot && (
-            <div className="text-[11px] text-emerald-700">
-              Próximo turno disponible: {nextAvailableSlot.label} · {nextAvailableSlot.slot} hs
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handlePrevWeek}
-            disabled={weekIndex === 0}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium hover:bg-slate-50 disabled:opacity-40"
-          >
-            Semana anterior
-          </button>
-          <span className="text-xs text-slate-500">
-            Semana {weekIndex + 1} / {weeks.length}
-          </span>
-          <button
-            type="button"
-            onClick={handleNextWeek}
-            disabled={weekIndex >= weeks.length - 1}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium hover:bg-slate-50 disabled:opacity-40"
-          >
-            Semana siguiente
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-3">
-        {week.days.map((day) => {
-          const enrichedAppointments = day.appointments.map((item) => {
-            const member = membersById[item.memberId];
-            const family = familiesById[item.familyId];
-            return {
-              ...item,
-              patientName: getMemberDisplayName(member),
-              familyCode: family?.code || '—',
-            };
-          });
-          const isSelected = selectedDate === day.isoDate;
-          return (
-            <div
-              key={day.isoDate}
-              className={`rounded-2xl border border-slate-200 bg-slate-50/60 p-3 flex flex-col gap-2 ${isSelected ? 'border-slate-900 ring-2 ring-slate-900/20 bg-white' : ''}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-900 capitalize">
-                    {day.label}
-                  </span>
-                  {day.isToday && (
-                    <span className="text-[10px] px-2 py-1 rounded-full bg-slate-900 text-white uppercase tracking-wide">
-                      Hoy
-                    </span>
-                  )}
-                </div>
-                {day.isPast ? (
-                  <span className="text-[10px] uppercase tracking-wide text-slate-400">Pasado</span>
-                ) : day.futureSlots.length > 0 ? (
-                  <span className="text-[10px] uppercase tracking-wide text-emerald-700">
-                    {day.futureSlots.length} libres
-                  </span>
-                ) : (
-                  <span className="text-[10px] uppercase tracking-wide text-rose-600">Completo</span>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {enrichedAppointments.length ? (
-                  enrichedAppointments.map((item) => {
-                    const statusColor = getStatusBadgeColor(item.estado);
-                    return (
-                      <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-2 flex flex-col gap-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-slate-900">{item.time || 'Sin hora'}</span>
-                          <span className={`text-[10px] uppercase tracking-wide px-2 py-1 rounded-full ${statusColor}`}>
-                            {item.estado}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-700">{item.patientName}</div>
-                        <div className="text-[10px] text-slate-500">HC {item.familyCode}</div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-xs text-slate-500">Sin turnos agendados</div>
-                )}
-              </div>
-
-              {!day.isPast && day.futureSlots.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {day.futureSlots.map((slot) => (
-                    <span
-                      key={slot}
-                      className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 uppercase tracking-wide"
-                    >
-                      {slot}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {onSelectDate && (
-                <button
-                  type="button"
-                  onClick={() => onSelectDate(day.isoDate)}
-                  className="text-xs px-3 py-1 rounded-lg border border-slate-300 hover:bg-white transition"
-                >
-                  Ver día
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {firstAvailableIndex >= 0 && (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => setWeekIndex(firstAvailableIndex)}
-            className="text-xs px-3 py-1 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-          >
-            Ir al próximo disponible
-          </button>
-        </div>
-      )}
-    </section>
-  );
-}
 
 function normalizeAgCode(value) {
   if (!value) return '';
@@ -677,6 +56,7 @@ function buildMotivoMetadata(groupId, detailId) {
     detailLabel: detail?.label || ''
   };
 }
+
 function buildExamenFisicoFromPayload(payload = {}) {
   const examen = {
     peso: payload.pacienteExamenPeso,
@@ -704,6 +84,218 @@ function buildExamenFisicoFromPayload(payload = {}) {
     }
   });
   return examen;
+}
+
+function mapIntakeToFamily({ family, members = [], payload }) {
+  const hasContent = (value) => {
+    if (value == null) return false;
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return true;
+  };
+
+  const motivo = buildMotivoMetadata(payload.motivoGroup, payload.motivoDetail);
+  const existingTags = Array.isArray(family.tags) ? family.tags : [];
+  const tags = Array.from(
+    new Set(
+      [
+        ...existingTags,
+        motivo.groupId,
+        motivo.detailId,
+        motivo.groupLabel?.toLowerCase?.(),
+        motivo.detailLabel?.toLowerCase?.(),
+      ].filter(Boolean),
+    ),
+  );
+  const medicoAsignado = (payload.medicoAsignado || family.medicoAsignado || '').trim();
+  const examenFisico = buildExamenFisicoFromPayload(payload);
+  const contactos = {
+    direccion: payload.pacienteDireccion || family.filiatoriosContacto?.direccion || '',
+    email: payload.pacienteEmail || family.filiatoriosContacto?.email || '',
+    telefono: payload.pacienteTelefono || family.filiatoriosContacto?.telefono || '',
+  };
+  const nowIso = new Date().toISOString();
+  const intakePrev = family.intake || {};
+  const intake = {
+    ...intakePrev,
+    administrativo: { ...(intakePrev.administrativo || {}), ...payload },
+    wizardPending: false,
+    wizardCompletedAt: nowIso,
+    wizardPayload: payload,
+    examen: Object.keys(examenFisico).length
+      ? { ...examenFisico, edadReferencia: payload.pacienteEdad }
+      : intakePrev.examen,
+  };
+
+  const previousAbuelos = family.abuelos || {};
+  const familyPatch = {
+    code: normalizeAgCode(payload.agNumber) || family.code,
+    provincia: payload.provincia || family.provincia || '',
+    tags,
+    motivo,
+    motivoNotes: payload.motivoDerivacion || family.motivoNotes,
+    motivoPaciente: payload.motivoPaciente || family.motivoPaciente,
+    motivoDerivacion: payload.motivoDerivacion || family.motivoDerivacion,
+    medicoAsignado,
+    filiatoriosContacto: contactos,
+    consanguinidad: {
+      estado: payload.consanguinidad || family.consanguinidad?.estado || 'no',
+      detalle: payload.consanguinidadDetalle || family.consanguinidad?.detalle || '',
+    },
+    antecedentesObstetricos: payload.obstetricosDescripcion || family.antecedentesObstetricos,
+    abuelos: {
+      paternos: {
+        abuelo: {
+          apellido:
+            payload.abueloPaternoApellido ||
+            previousAbuelos?.paternos?.abuelo?.apellido ||
+            '',
+          procedencia:
+            payload.abueloPaternoProcedencia ||
+            previousAbuelos?.paternos?.abuelo?.procedencia ||
+            '',
+        },
+        abuela: {
+          apellido:
+            payload.abuelaPaternaApellido ||
+            previousAbuelos?.paternos?.abuela?.apellido ||
+            '',
+          procedencia:
+            payload.abuelaPaternaProcedencia ||
+            previousAbuelos?.paternos?.abuela?.procedencia ||
+            '',
+        },
+      },
+      maternos: {
+        abuelo: {
+          apellido:
+            payload.abueloMaternoApellido ||
+            previousAbuelos?.maternos?.abuelo?.apellido ||
+            '',
+          procedencia:
+            payload.abueloMaternoProcedencia ||
+            previousAbuelos?.maternos?.abuelo?.procedencia ||
+            '',
+        },
+        abuela: {
+          apellido:
+            payload.abuelaMaternaApellido ||
+            previousAbuelos?.maternos?.abuela?.apellido ||
+            '',
+          procedencia:
+            payload.abuelaMaternaProcedencia ||
+            previousAbuelos?.maternos?.abuela?.procedencia ||
+            '',
+        },
+      },
+    },
+    intake,
+  };
+
+  const familyMembers = Array.isArray(members) ? members : [];
+  const proband =
+    familyMembers.find(
+      (member) => member.rol === 'Proband' || member.filiatorios?.iniciales === 'A1',
+    ) || null;
+  const probandId = proband?.id || null;
+  const pacienteNombre = (payload.pacienteNombre || '').trim();
+  const pacienteApellido = (payload.pacienteApellido || '').trim();
+  const pacienteNombreCompleto =
+    [pacienteNombre, pacienteApellido].filter(Boolean).join(' ') ||
+    proband?.nombre ||
+    'Paciente sin nombre';
+
+  let probandPatch = null;
+  if (proband) {
+    const contacto = { ...(proband.contacto || {}) };
+    if (hasContent(payload.pacienteEmail)) contacto.email = payload.pacienteEmail;
+    if (hasContent(payload.pacienteTelefono)) contacto.telefono = payload.pacienteTelefono;
+    const contactoValue =
+      Object.keys(contacto).length > 0 ? contacto : proband.contacto;
+
+    probandPatch = {
+      filiatorios: { ...(proband.filiatorios || {}), nombreCompleto: pacienteNombreCompleto },
+      nombre: pacienteNombreCompleto,
+      contacto: contactoValue,
+      direccion: contactos.direccion || proband.direccion,
+      diagnostico: motivo.detailLabel || motivo.groupLabel || proband.diagnostico,
+      sexo: payload.pacienteSexo || proband.sexo || undefined,
+      nacimiento: payload.pacienteNacimiento || proband.nacimiento || undefined,
+      profesion: payload.pacienteProfesion || proband.profesion || undefined,
+      obraSocial: payload.pacienteObraSocial || proband.obraSocial || undefined,
+      antecedentesPersonales:
+        payload.pacienteAntecedentes || proband.antecedentesPersonales || undefined,
+      examenFisico: Object.keys(examenFisico).length ? examenFisico : proband.examenFisico,
+    };
+  }
+
+  const relatives = [];
+  const motherData = {
+    nombre: payload.b1Nombre,
+    apellido: payload.b1Apellido,
+    nacimiento: payload.b1Nacimiento,
+    email: payload.b1Email,
+    profesion: payload.b1Profesion,
+    obraSocial: payload.b1ObraSocial,
+    antecedentes: payload.b1Antecedentes,
+  };
+  if (Object.values(motherData).some(hasContent)) {
+    relatives.push({
+      role: 'B1',
+      initials: 'B1',
+      data: motherData,
+    });
+  }
+
+  const fatherData = {
+    nombre: payload.c1Nombre,
+    apellido: payload.c1Apellido,
+    nacimiento: payload.c1Nacimiento,
+    email: payload.c1Email,
+    profesion: payload.c1Profesion,
+    obraSocial: payload.c1ObraSocial,
+    antecedentes: payload.c1Antecedentes,
+  };
+  const obstetricos = {
+    gestas: payload.c1Gestas,
+    partos: payload.c1Partos,
+    abortos: payload.c1Abortos,
+    cesareas: payload.c1Cesareas,
+  };
+  const hasFatherData = Object.values(fatherData).some(hasContent);
+  const hasObstetricos = Object.values(obstetricos).some(hasContent);
+  if (hasFatherData || hasObstetricos) {
+    relatives.push({
+      role: 'C1',
+      initials: 'C1',
+      data: fatherData,
+      obstetricos: hasObstetricos ? obstetricos : undefined,
+    });
+  }
+
+  const resumenPrimera = (payload.resumenPrimeraConsulta || payload.primeraEvolucion || '').trim();
+  const evolutionText =
+    resumenPrimera ||
+    [
+      `Motivo: ${motivo.detailLabel || motivo.groupLabel || 'Motivo de consulta'}`,
+      payload.motivoPaciente ? `Paciente: ${payload.motivoPaciente}` : '',
+      payload.motivoDerivacion ? `Derivación: ${payload.motivoDerivacion}` : '',
+      medicoAsignado ? `Profesional: ${medicoAsignado}` : '',
+      payload.pacienteExamenPeso ? `Peso: ${payload.pacienteExamenPeso} kg` : '',
+      payload.pacienteExamenTalla ? `Talla: ${payload.pacienteExamenTalla} cm` : '',
+      payload.pacienteExamenPc ? `PC: ${payload.pacienteExamenPc} cm` : '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+  return {
+    familyPatch,
+    probandPatch,
+    probandId,
+    relatives,
+    evolutionText,
+  };
 }
 
 function buildWizardInitialData(family, members = []) {
@@ -754,57 +346,44 @@ function buildWizardInitialData(family, members = []) {
   return base;
 }
 
-
-
-function FooterBar({ onAnalytics }) {
-  return (
-    <div className="fixed bottom-0 inset-x-0 z-20 bg-white/90 backdrop-blur border-t border-slate-200">
-      <div className="mx-auto max-w-6xl px-4 py-2 flex items-center justify-center">
-        <button onClick={onAnalytics} className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 shadow-sm">📊 Análisis de datos</button>
-      </div>
-    </div>
-  );
-}
-
 export default function HomePage({ user, onLogout }) {
-  const { state, STORAGE_KEY, createFamily, createMember, addEvolution, updateFamily, updateMember } = useCenagemStore();
-  const { families, members, evolutions } = state;
+  const {
+    state,
+    STORAGE_KEY,
+    createFamily,
+    createMember,
+    addEvolution,
+    updateFamily,
+    updateMember,
+    ensureFamilyDetail,
+  } = useCenagemStore();
+  const { families = [], members = [], evolutions = [] } = state;
 
   const [showNewCase, setShowNewCase] = useState(false);
   const [creatingCase, setCreatingCase] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(() => formatISODateLocal(new Date()));
-  const [agenda, setAgenda] = useState(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const stored = window.localStorage.getItem(AGENDA_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (error) {
-      console.warn('No se pudo leer la agenda desde localStorage', error);
-    }
-    const seed = seedAgendaFromMembers(members);
-    try {
-      window.localStorage.setItem(AGENDA_STORAGE_KEY, JSON.stringify(seed));
-    } catch (error) {
-      console.warn('No se pudo inicializar la agenda en localStorage', error);
-    }
-    return seed;
-  });
+  const [createCaseError, setCreateCaseError] = useState(null);
+  const [pendingAppointmentForNewCase, setPendingAppointmentForNewCase] = useState(null);
+  const {
+    agenda,
+    selectedDate,
+    agendaForSelectedDate,
+    nextAvailableSlots,
+    setSelectedDate,
+    addAppointment,
+    updateAppointmentStatus,
+    removeAppointment,
+    markFamilyAppointmentsAsAttended,
+    syncAgenda,
+    setAgenda,
+  } = useAgenda();
   const [familyCodeInput, setFamilyCodeInput] = useState('');
   const [familyCodeFeedback, setFamilyCodeFeedback] = useState(null);
+  const [familySearchResults, setFamilySearchResults] = useState([]);
+  const [familySearchBusy, setFamilySearchBusy] = useState(false);
+  const familySearchRequestIdRef = useRef(0);
   const [wizardFamilyId, setWizardFamilyId] = useState(null);
   const [wizardBusy, setWizardBusy] = useState(false);
   const [wizardActive, setWizardActive] = useState(false);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(AGENDA_STORAGE_KEY, JSON.stringify(agenda));
-    } catch (error) {
-      console.warn('No se pudo persistir la agenda en localStorage', error);
-    }
-  }, [agenda]);
 
   useEffect(() => {
     setWizardBusy(false);
@@ -847,6 +426,110 @@ export default function HomePage({ user, onLogout }) {
     return map;
   }, [families]);
 
+  useEffect(() => {
+    const term = familyCodeInput.trim();
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    if (term.length < 2) {
+      familySearchRequestIdRef.current += 1;
+      setFamilySearchResults([]);
+      setFamilySearchBusy(false);
+      return undefined;
+    }
+
+    const requestId = familySearchRequestIdRef.current + 1;
+    familySearchRequestIdRef.current = requestId;
+    setFamilySearchBusy(true);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await cenagemApi.listFamilies({
+          search: term,
+          limit: 8,
+          withMembers: true,
+        });
+        if (familySearchRequestIdRef.current !== requestId) {
+          return;
+        }
+        const collection = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response)
+            ? response
+            : [];
+
+        const formattedResults = collection.map((item) => {
+          const membersPreview = Array.isArray(item.membersPreview)
+            ? item.membersPreview.map((member) => ({
+                id: member.id,
+                name:
+                  (typeof member.displayName === 'string' && member.displayName.trim()) ||
+                  (typeof member.initials === 'string' && member.initials.trim()) ||
+                  '',
+                dni: typeof member.documentNumber === 'string' ? member.documentNumber.trim() : '',
+                role: member.role || '',
+              }))
+            : [];
+
+          const intake =
+            item.intake && typeof item.intake === 'object' && !Array.isArray(item.intake)
+              ? item.intake
+              : null;
+          const administrativo =
+            intake && typeof intake.administrativo === 'object' && !Array.isArray(intake.administrativo)
+              ? intake.administrativo
+              : null;
+
+          if (
+            administrativo &&
+            (!membersPreview.length || membersPreview.every((member) => !member.dni))
+          ) {
+            const adminNombre = [
+              typeof administrativo.pacienteNombre === 'string' ? administrativo.pacienteNombre.trim() : '',
+              typeof administrativo.pacienteApellido === 'string' ? administrativo.pacienteApellido.trim() : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+            const adminDni =
+              typeof administrativo.pacienteDni === 'string'
+                ? administrativo.pacienteDni.trim()
+                : '';
+            if (adminNombre || adminDni) {
+              membersPreview.push({
+                id: `${item.id}-administrativo`,
+                name: adminNombre || 'Paciente principal',
+                dni: adminDni,
+                role: 'Paciente',
+              });
+            }
+          }
+
+          return {
+            id: item.id,
+            code: item.code,
+            displayName: item.displayName,
+            members: membersPreview,
+          };
+        });
+
+        setFamilySearchResults(formattedResults);
+      } catch (error) {
+        if (familySearchRequestIdRef.current === requestId) {
+          console.error('Error al buscar historias clínicas', error);
+          setFamilySearchResults([]);
+        }
+      } finally {
+        if (familySearchRequestIdRef.current === requestId) {
+          setFamilySearchBusy(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [familyCodeInput]);
+
   const wizardFamily = wizardFamilyId ? familiesById[wizardFamilyId] : null;
 
   const wizardFamilyMembers = useMemo(() => {
@@ -868,14 +551,6 @@ export default function HomePage({ user, onLogout }) {
       .trim();
     return name;
   }, [wizardInitialData]);
-
-  const agendaForSelectedDate = useMemo(() => {
-    return agenda
-      .filter((item) => item.date === selectedDate)
-      .slice()
-      .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-  }, [agenda, selectedDate]);
-
   const probands = useMemo(() => members.filter((member) => member.rol === 'Proband'), [members]);
   const consultasHoy = agendaForSelectedDate.length;
   const pendientesHoy = agendaForSelectedDate.filter((item) => item.estado !== 'Atendido').length;
@@ -941,32 +616,52 @@ export default function HomePage({ user, onLogout }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const handleCreateAppointment = ({ memberId, date, time, profesional, motivo, notas }) => {
-    const member = membersById[memberId];
-    if (!member) return;
+  const handleCreateAppointment = async ({ memberId, date, time, motivo, notas, primeraConsulta, sobreturno, primeraConsultaInfo }) => {
+    const member = memberId ? membersById[memberId] : null;
+    if (!member && !primeraConsulta) return;
     const appointment = {
       id: uidLocal(),
-      memberId,
-      familyId: member.familyId,
+      memberId: member?.id || null,
+      familyId: member?.familyId || null,
       date: date || selectedDate,
       time: time || '08:00',
-      motivo: motivo || member.diagnostico || 'Consulta genética',
-      profesional,
+      motivo: motivo || member?.diagnostico || 'Consulta genética',
       notas,
-      estado: 'Pendiente'
+      estado: 'Pendiente',
+      primeraConsulta: Boolean(primeraConsulta),
+      sobreturno: Boolean(sobreturno),
+      primeraConsultaInfo: primeraConsulta ? primeraConsultaInfo || null : null,
     };
-    setAgenda((prev) => [...prev, appointment]);
+    try {
+      await addAppointment(appointment);
+    } catch (error) {
+      console.error('No se pudo crear el turno', error);
+    }
   };
 
-  const handleStatusChange = (id, status) => {
-    setAgenda((prev) => prev.map((item) => (item.id === id ? { ...item, estado: status } : item)));
+  const handleStatusChange = async (id, status) => {
+    try {
+      await updateAppointmentStatus(id, status);
+    } catch (error) {
+      console.error('No se pudo actualizar el estado del turno', error);
+    }
   };
 
-  const handleRemoveAppointment = (id) => {
-    setAgenda((prev) => prev.filter((item) => item.id !== id));
+  const handleRemoveAppointment = async (id) => {
+    try {
+      await removeAppointment(id);
+    } catch (error) {
+      console.error('No se pudo eliminar el turno', error);
+    }
   };
 
-  const handleOpenFamily = (familyId) => {
+  const handleCreateFamilyCaseFromAppointment = (appointment) => {
+    setCreateCaseError(null);
+    setPendingAppointmentForNewCase(appointment || null);
+    setShowNewCase(true);
+  };
+
+  const handleOpenFamily = async (familyId) => {
     const family = familiesById[familyId];
     if (family?.intake?.wizardPending) {
       setWizardBusy(false);
@@ -974,16 +669,10 @@ export default function HomePage({ user, onLogout }) {
       setWizardActive(false);
       return;
     }
-    let changed = false;
-    const updated = agenda.map((item) => {
-      if (item.familyId === familyId && item.date === selectedDate && item.estado !== 'Atendido') {
-        changed = true;
-        return { ...item, estado: 'Atendido' };
-      }
-      return item;
-    });
-    if (changed) {
-      setAgenda(updated);
+    try {
+      await markFamilyAppointmentsAsAttended(familyId, selectedDate);
+    } catch (error) {
+      console.error('No se pudieron actualizar los turnos de la familia', error);
     }
     window.location.hash = '#/family/' + familyId;
   };
@@ -999,6 +688,11 @@ export default function HomePage({ user, onLogout }) {
     setWizardFamilyId(null);
   };
 
+  const handleFamilyCodeInputChange = (value) => {
+    setFamilyCodeInput(value);
+    if (familyCodeFeedback) setFamilyCodeFeedback(null);
+  };
+
   const handleGoToFamilyByCode = () => {
     const normalized = normalizeFamilyCodeInput(familyCodeInput);
     if (!normalized) {
@@ -1012,11 +706,37 @@ export default function HomePage({ user, onLogout }) {
     }
     setFamilyCodeFeedback(null);
     setFamilyCodeInput('');
+    familySearchRequestIdRef.current += 1;
+    setFamilySearchResults([]);
+    setFamilySearchBusy(false);
     handleOpenFamily(family.id);
   };
 
-  const handleCreateCase = async (payload) => {
+  const handleSelectFamilyFromSearch = async (familyId) => {
+    if (!familyId) return;
+    familySearchRequestIdRef.current += 1;
+    setFamilySearchResults([]);
+    setFamilyCodeInput('');
+    setFamilyCodeFeedback(null);
+    setFamilySearchBusy(true);
+    try {
+      await ensureFamilyDetail(familyId, true);
+      await handleOpenFamily(familyId);
+    } catch (error) {
+      console.error('No se pudo abrir la historia clínica seleccionada', error);
+    } finally {
+      setFamilySearchBusy(false);
+    }
+  };
+
+  const handleCreateCase = async (formPayload) => {
     setCreatingCase(true);
+    setCreateCaseError(null);
+    const appointmentContext = pendingAppointmentForNewCase;
+    const payload = { ...formPayload };
+    if (!payload.consultaFecha) {
+      payload.consultaFecha = appointmentContext?.date || formatISODateLocal(new Date());
+    }
     try {
       const normalizedCode = normalizeAgCode(payload.agNumber);
       const code = normalizedCode || generateNextCode(families);
@@ -1030,7 +750,31 @@ export default function HomePage({ user, onLogout }) {
       const medicoAsignado = (payload.medicoAsignado || '').trim();
       const nowIso = new Date().toISOString();
 
-      const family = createFamily({
+      const ingresoInfo = appointmentContext
+        ? {
+            tipo: appointmentContext.primeraConsulta ? 'primera_consulta' : 'agenda',
+            label: appointmentContext.primeraConsulta ? 'Ingreso de 1ra consulta' : 'Ingreso programado',
+            estado: 'en_sala',
+            appointmentId: appointmentContext.id || null,
+            agendaFecha: appointmentContext.date || null,
+            agendaHora: appointmentContext.time || null,
+            registradoPor: user?.email || 'registro',
+            registradoEn: nowIso,
+          }
+        : null;
+
+      const metadataExtras = appointmentContext
+        ? {
+            ingresoTipo: appointmentContext.primeraConsulta ? 'primera_consulta' : 'agenda',
+            ingresoLabel: appointmentContext.primeraConsulta ? 'Ingreso de 1ra consulta' : 'Ingreso programado',
+            ingresoEstado: 'en_sala',
+            agendaAppointmentId: appointmentContext.id || null,
+            agendaDate: appointmentContext.date || null,
+            agendaTime: appointmentContext.time || null,
+          }
+        : {};
+
+      const family = await createFamily({
         code,
         provincia: payload.provincia || '',
         tags,
@@ -1062,8 +806,10 @@ export default function HomePage({ user, onLogout }) {
         intake: {
           createdAt: nowIso,
           wizardPending: true,
-          administrativo: payload
+          administrativo: payload,
+          ...(ingresoInfo ? { ingreso: ingresoInfo } : {}),
         },
+        metadata: metadataExtras,
         createdBy: user?.email || 'sistema'
       });
 
@@ -1080,7 +826,7 @@ export default function HomePage({ user, onLogout }) {
       const pacienteApellido = (payload.pacienteApellido || '').trim();
       const pacienteNombreCompleto = [pacienteNombre, pacienteApellido].filter(Boolean).join(' ');
 
-      const proband = createMember(family.id, {
+      const proband = await createMember(family.id, {
         rol: 'Proband',
         filiatorios: { iniciales: 'A1', nombreCompleto: pacienteNombreCompleto || 'Paciente sin nombre' },
         nombre: pacienteNombreCompleto || 'Paciente sin nombre',
@@ -1103,14 +849,80 @@ export default function HomePage({ user, onLogout }) {
       ].filter(Boolean).join(' | ');
 
       if (proband?.id) {
-        addEvolution(proband.id, resumen || 'Alta administrativa creada', user?.email || 'registro');
+        await addEvolution(proband.id, resumen || 'Alta administrativa creada', user?.email || 'registro');
       }
 
+      if (appointmentContext?.id) {
+        try {
+          const existingMetadata = appointmentContext.metadata && typeof appointmentContext.metadata === 'object' && !Array.isArray(appointmentContext.metadata)
+            ? { ...appointmentContext.metadata }
+            : {};
+          const ingresoLabel = appointmentContext.primeraConsulta ? 'Ingreso de 1ra consulta' : 'Ingreso programado';
+          const updatedMetadata = {
+            ...existingMetadata,
+            ingreso: {
+              tipo: appointmentContext.primeraConsulta ? 'primera_consulta' : 'agenda',
+              label: ingresoLabel,
+              estado: 'en_sala',
+              appointmentId: appointmentContext.id || null,
+              actualizadoEn: nowIso,
+              actualizadoPor: user?.email || 'registro',
+              familyId: family.id,
+              familyCode: code,
+            },
+            familia: {
+              id: family.id,
+              code,
+              paciente: pacienteNombreCompleto || 'Paciente sin nombre',
+            },
+          };
+          const basePayload = {
+            status: 'IN_ROOM',
+            metadata: updatedMetadata,
+          };
+          const payloadWithMember = proband?.id ? { ...basePayload, memberId: proband.id } : basePayload;
+          try {
+            await cenagemApi.updateAppointment(appointmentContext.id, payloadWithMember);
+          } catch (updateError) {
+            const message = (updateError?.message || '').toLowerCase();
+            if (proband?.id && message.includes('no pertenece a la familia')) {
+              await cenagemApi.updateAppointment(appointmentContext.id, basePayload);
+            } else {
+              throw updateError;
+            }
+          }
+          setAgenda((prev) => prev.map((item) => {
+            if (item.id !== appointmentContext.id) return item;
+            return {
+              ...item,
+              familyId: family.id,
+              memberId: proband?.id || item.memberId,
+              estado: 'En sala',
+              metadata: updatedMetadata,
+            };
+          }));
+          try {
+            await syncAgenda();
+          } catch (syncError) {
+            console.warn('No se pudo sincronizar la agenda tras actualizar el turno', syncError);
+          }
+        } catch (appointmentError) {
+          console.error('No se pudo actualizar el turno asociado a la nueva HC', appointmentError);
+        }
+      }
+
+      await ensureFamilyDetail(family.id, true);
+
       setShowNewCase(false);
+      setPendingAppointmentForNewCase(null);
       alert(`HC creada correctamente. Código asignado: ${code}`);
     } catch (error) {
       console.error('Error creando la HC', error);
-      alert('No se pudo crear la HC. Revisá los datos e intentá nuevamente.');
+      const friendlyMessage =
+        error?.message && typeof error.message === 'string'
+          ? error.message
+          : 'No se pudo crear la HC. Revisá los datos e intentá nuevamente.';
+      setCreateCaseError(friendlyMessage);
     } finally {
       setCreatingCase(false);
     }
@@ -1122,111 +934,29 @@ export default function HomePage({ user, onLogout }) {
     if (!family) return;
     setWizardBusy(true);
     try {
-      const motivo = buildMotivoMetadata(payload.motivoGroup, payload.motivoDetail);
-      const tags = Array.from(new Set([
-        ...(Array.isArray(family.tags) ? family.tags : []),
-        motivo.groupId,
-        motivo.detailId,
-        motivo.groupLabel?.toLowerCase(),
-        motivo.detailLabel?.toLowerCase()
-      ].filter(Boolean)));
-      const medicoAsignado = (payload.medicoAsignado || family.medicoAsignado || '').trim();
-      const examenFisico = buildExamenFisicoFromPayload(payload);
-      const contactos = {
-        direccion: payload.pacienteDireccion || family.filiatoriosContacto?.direccion || '',
-        email: payload.pacienteEmail || family.filiatoriosContacto?.email || '',
-        telefono: payload.pacienteTelefono || family.filiatoriosContacto?.telefono || ''
-      };
-      const nowIso = new Date().toISOString();
-
-      const intakePrev = family.intake || {};
-      const intake = {
-        ...intakePrev,
-        administrativo: { ...(intakePrev.administrativo || {}), ...payload },
-        wizardPending: false,
-        wizardCompletedAt: nowIso,
-        wizardPayload: payload,
-        examen: Object.keys(examenFisico).length ? { ...examenFisico, edadReferencia: payload.pacienteEdad } : intakePrev.examen
-      };
-
-      const familyPatch = {
-        code: normalizeAgCode(payload.agNumber) || family.code,
-        provincia: payload.provincia || family.provincia || '',
-        tags,
-        motivo,
-        motivoNotes: payload.motivoDerivacion || family.motivoNotes,
-        motivoPaciente: payload.motivoPaciente || family.motivoPaciente,
-        motivoDerivacion: payload.motivoDerivacion || family.motivoDerivacion,
-        medicoAsignado,
-        filiatoriosContacto: contactos,
-        consanguinidad: {
-          estado: payload.consanguinidad || family.consanguinidad?.estado || 'no',
-          detalle: payload.consanguinidadDetalle || family.consanguinidad?.detalle || ''
-        },
-        antecedentesObstetricos: payload.obstetricosDescripcion || family.antecedentesObstetricos,
-        abuelos: {
-          paternos: {
-            abuelo: {
-              apellido: payload.abueloPaternoApellido || family.abuelos?.paternos?.abuelo?.apellido || '',
-              procedencia: payload.abueloPaternoProcedencia || family.abuelos?.paternos?.abuelo?.procedencia || ''
-            },
-            abuela: {
-              apellido: payload.abuelaPaternaApellido || family.abuelos?.paternos?.abuela?.apellido || '',
-              procedencia: payload.abuelaPaternaProcedencia || family.abuelos?.paternos?.abuela?.procedencia || ''
-            }
-          },
-          maternos: {
-            abuelo: {
-              apellido: payload.abueloMaternoApellido || family.abuelos?.maternos?.abuelo?.apellido || '',
-              procedencia: payload.abueloMaternoProcedencia || family.abuelos?.maternos?.abuelo?.procedencia || ''
-            },
-            abuela: {
-              apellido: payload.abuelaMaternaApellido || family.abuelos?.maternos?.abuela?.apellido || '',
-              procedencia: payload.abuelaMaternaProcedencia || family.abuelos?.maternos?.abuela?.procedencia || ''
-            }
-          }
-        },
-        intake
-      };
-
-      updateFamily(familyId, familyPatch);
-
       const familyMembers = membersByFamilyId[familyId] || [];
-      const proband = familyMembers.find((member) => member.rol === 'Proband' || member.filiatorios?.iniciales === 'A1') || null;
-      const pacienteNombre = (payload.pacienteNombre || '').trim();
-      const pacienteApellido = (payload.pacienteApellido || '').trim();
-      const pacienteNombreCompleto = [pacienteNombre, pacienteApellido].filter(Boolean).join(' ') || proband?.nombre || 'Paciente sin nombre';
+      const mapping = mapIntakeToFamily({ family, members: familyMembers, payload });
 
-      if (proband) {
-        const contacto = { ...(proband.contacto || {}) };
-        if (payload.pacienteEmail) contacto.email = payload.pacienteEmail;
-        if (payload.pacienteTelefono) contacto.telefono = payload.pacienteTelefono;
-        const probandPatch = {
-          filiatorios: { ...(proband.filiatorios || {}), nombreCompleto: pacienteNombreCompleto },
-          nombre: pacienteNombreCompleto,
-          contacto: Object.keys(contacto).length ? contacto : proband.contacto,
-          direccion: contactos.direccion || proband.direccion,
-          diagnostico: motivo.detailLabel || motivo.groupLabel || proband.diagnostico,
-          sexo: payload.pacienteSexo || proband.sexo || undefined,
-          nacimiento: payload.pacienteNacimiento || proband.nacimiento || undefined,
-          profesion: payload.pacienteProfesion || proband.profesion || undefined,
-          obraSocial: payload.pacienteObraSocial || proband.obraSocial || undefined,
-          antecedentesPersonales: payload.pacienteAntecedentes || proband.antecedentesPersonales || undefined,
-          examenFisico: Object.keys(examenFisico).length ? examenFisico : proband.examenFisico
-        };
-        updateMember(proband.id, probandPatch);
-      }
+      await updateFamily(familyId, mapping.familyPatch);
 
-      const upsertRelative = (role, initials, data, extra = {}) => {
+      const upsertRelative = async ({ role, initials, data = {}, obstetricos }) => {
         const nombre = (data.nombre || '').trim();
         const apellido = (data.apellido || '').trim();
         const nombreCompleto = [nombre, apellido].filter(Boolean).join(' ');
         if (!nombreCompleto) return;
-        const existing = familyMembers.find((member) => member.rol === role || member.filiatorios?.iniciales === initials) || null;
+        const existing =
+          familyMembers.find(
+            (member) => member.rol === role || member.filiatorios?.iniciales === initials,
+          ) || null;
         let contacto = existing?.contacto ? { ...existing.contacto } : {};
-        if (data.email) contacto.email = data.email;
-        if (data.telefono) contacto.telefono = data.telefono;
-        if (!Object.keys(contacto).length) contacto = existing?.contacto && Object.keys(existing.contacto).length ? existing.contacto : undefined;
+        if (data.email && data.email.trim()) contacto.email = data.email;
+        if (data.telefono && data.telefono.trim()) contacto.telefono = data.telefono;
+        if (!Object.keys(contacto).length) {
+          contacto =
+            existing?.contacto && Object.keys(existing.contacto).length
+              ? existing.contacto
+              : undefined;
+        }
         const patch = {
           rol: role,
           filiatorios: { ...(existing?.filiatorios || {}), iniciales: initials, nombreCompleto },
@@ -1237,63 +967,39 @@ export default function HomePage({ user, onLogout }) {
           antecedentesPersonales: data.antecedentes || existing?.antecedentesPersonales || undefined,
         };
         if (contacto) patch.contacto = contacto;
-        if (extra.obstetricos) {
+        if (obstetricos) {
           const prev = existing?.obstetricos || {};
           patch.obstetricos = {
-            gestas: extra.obstetricos.gestas ?? prev.gestas,
-            partos: extra.obstetricos.partos ?? prev.partos,
-            abortos: extra.obstetricos.abortos ?? prev.abortos,
-            cesareas: extra.obstetricos.cesareas ?? prev.cesareas,
+            gestas: obstetricos.gestas ?? prev.gestas,
+            partos: obstetricos.partos ?? prev.partos,
+            abortos: obstetricos.abortos ?? prev.abortos,
+            cesareas: obstetricos.cesareas ?? prev.cesareas,
           };
         }
         if (existing) {
-          updateMember(existing.id, patch);
+          await updateMember(existing.id, patch);
         } else {
-          createMember(familyId, { ...patch, notas: [] });
+          await createMember(familyId, { ...patch, notas: [] });
         }
       };
 
-      upsertRelative('B1', 'B1', {
-        nombre: payload.b1Nombre,
-        apellido: payload.b1Apellido,
-        nacimiento: payload.b1Nacimiento,
-        email: payload.b1Email,
-        profesion: payload.b1Profesion,
-        obraSocial: payload.b1ObraSocial,
-        antecedentes: payload.b1Antecedentes,
-      });
-
-      upsertRelative('C1', 'C1', {
-        nombre: payload.c1Nombre,
-        apellido: payload.c1Apellido,
-        nacimiento: payload.c1Nacimiento,
-        email: payload.c1Email,
-        profesion: payload.c1Profesion,
-        obraSocial: payload.c1ObraSocial,
-        antecedentes: payload.c1Antecedentes,
-      }, {
-        obstetricos: {
-          gestas: payload.c1Gestas,
-          partos: payload.c1Partos,
-          abortos: payload.c1Abortos,
-          cesareas: payload.c1Cesareas,
-        },
-      });
-
-      const resumenPrimera = (payload.resumenPrimeraConsulta || '').trim();
-      const resumen = resumenPrimera || [
-        `Motivo: ${motivo.detailLabel || motivo.groupLabel || 'Motivo de consulta'}`,
-        payload.motivoPaciente ? `Paciente: ${payload.motivoPaciente}` : '',
-        payload.motivoDerivacion ? `Derivación: ${payload.motivoDerivacion}` : '',
-        medicoAsignado ? `Profesional: ${medicoAsignado}` : '',
-        payload.pacienteExamenPeso ? `Peso: ${payload.pacienteExamenPeso} kg` : '',
-        payload.pacienteExamenTalla ? `Talla: ${payload.pacienteExamenTalla} cm` : '',
-        payload.pacienteExamenPc ? `PC: ${payload.pacienteExamenPc} cm` : ''
-      ].filter(Boolean).join(' | ');
-
-      if (proband?.id) {
-        addEvolution(proband.id, resumen || 'Historia clínica inicial completada', user?.email || 'registro');
+      if (mapping.probandId && mapping.probandPatch) {
+        await updateMember(mapping.probandId, mapping.probandPatch);
       }
+
+      for (const relative of mapping.relatives) {
+        await upsertRelative(relative);
+      }
+
+      if (mapping.probandId && mapping.evolutionText) {
+        await addEvolution(
+          mapping.probandId,
+          mapping.evolutionText || 'Historia clínica inicial completada',
+          user?.email || 'registro',
+        );
+      }
+
+      await ensureFamilyDetail(familyId, true);
 
       setWizardActive(false);
       setWizardFamilyId(null);
@@ -1305,57 +1011,42 @@ export default function HomePage({ user, onLogout }) {
       setWizardBusy(false);
     }
   };
+
+  const handleCancelNewCase = () => {
+    setCreateCaseError(null);
+    setPendingAppointmentForNewCase(null);
+    setShowNewCase(false);
+  };
   return (
     <div className="p-6 grid gap-4">
       
-      <Header
+      <HomeHeader
         onLogout={onLogout}
         user={user}
         title="CENAGEM · HC Familiar"
-        onReset={() => { window.localStorage.removeItem(STORAGE_KEY); window.location.reload(); }}
+        onReset={() => {
+          window.localStorage.removeItem(STORAGE_KEY);
+          window.location.reload();
+        }}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-        {metrics.map((metric) => (
-          <MetricCard key={metric.label} label={metric.label} value={metric.value} hint={metric.hint} />
-        ))}
-      </div>
+      <MetricsBoard metrics={metrics} />
 
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap gap-2">
-          <button
-  onClick={() => setShowNewCase(true)}
-
-  className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium"
->
-  + Nueva HC familiar
-</button>
-
-          <button onClick={() => { window.location.hash = 'analytics'; }} className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm">
-            Ver tableros
-          </button>
-        </div>
-        <form onSubmit={(event) => { event.preventDefault(); handleGoToFamilyByCode(); }} className="flex flex-wrap items-center gap-2">
-          <input
-            type="text"
-            value={familyCodeInput}
-            onChange={(event) => {
-              setFamilyCodeInput(event.target.value.toUpperCase());
-              if (familyCodeFeedback) setFamilyCodeFeedback(null);
-            }}
-            placeholder="Ingresar nro de HC (ej. AG-0001)"
-            className="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-slate-300 text-sm uppercase"
-            autoComplete="off"
-            aria-label="Ingresar número de HC"
-          />
-          <button type="submit" className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium">
-            Ingresar
-          </button>
-        </form>
-        {familyCodeFeedback && (
-          <p className="text-xs text-rose-600" role="alert">{familyCodeFeedback}</p>
-        )}
-      </div>
+      <CaseAccessPanel
+        onCreateCase={() => {
+          setCreateCaseError(null);
+          setPendingAppointmentForNewCase(null);
+          setShowNewCase(true);
+        }}
+        onOpenAnalytics={() => { window.location.hash = 'analytics'; }}
+        familyCodeValue={familyCodeInput}
+        onFamilyCodeChange={handleFamilyCodeInputChange}
+        onSubmitFamilyCode={handleGoToFamilyByCode}
+        feedbackMessage={familyCodeFeedback}
+        searchResults={familySearchResults}
+        searchLoading={familySearchBusy}
+        onSelectSearchResult={handleSelectFamilyFromSearch}
+      />
 
       <TodayAgenda
         selectedDate={selectedDate}
@@ -1368,6 +1059,8 @@ export default function HomePage({ user, onLogout }) {
         onStatusChange={handleStatusChange}
         onRemoveAppointment={handleRemoveAppointment}
         onOpenFamily={handleOpenFamily}
+        onCreateFamilyCase={handleCreateFamilyCaseFromAppointment}
+        availableSlots={nextAvailableSlots}
       />
       <WeeklyAgendaBoard
         agenda={agenda}
@@ -1382,7 +1075,9 @@ export default function HomePage({ user, onLogout }) {
     <NewCaseCreate
       currentUser={{ name: user?.displayName || user?.email }}
       onCreate={handleCreateCase}
-      onCancel={() => setShowNewCase(false)}
+      onCancel={handleCancelNewCase}
+      errorMessage={createCaseError || ''}
+      onDismissError={() => setCreateCaseError(null)}
       busy={creatingCase}
     />
   </div>
@@ -1441,6 +1136,7 @@ export default function HomePage({ user, onLogout }) {
     </div>
   );
 }
+
 
 
 

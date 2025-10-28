@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-export default function useCouples(parentsMap, members = []) {
+export default function useCouples(parentsMap, members = [], relationships = []) {
   return useMemo(() => {
     const set = new Map();
     Object.values(parentsMap || {}).forEach(({ padreId, madreId }) => {
@@ -17,6 +17,14 @@ export default function useCouples(parentsMap, members = []) {
       const b = member.id < partnerId ? partnerId : member.id;
       set.set(`${a}|${b}`, { a, b });
     });
+    (relationships || []).forEach((rel) => {
+      if (!rel || rel.type !== 'partner') return;
+      const { a, b } = rel;
+      if (!a || !b) return;
+      const idA = a < b ? a : b;
+      const idB = a < b ? b : a;
+      set.set(`${idA}|${idB}`, { a: idA, b: idB });
+    });
     return Array.from(set.values());
-  }, [parentsMap, members]);
+  }, [parentsMap, members, relationships]);
 }

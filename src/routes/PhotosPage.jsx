@@ -1,58 +1,19 @@
 // ===============================
-// src/routes/PhotosPage.jsx — Galería de fotos por familia/miembro (sin react-router)
-// Lee/escribe STORAGE_KEY = 'cenagem-demo-v1'
-// Modo inline opcional: si inline === true, no renderiza header/footer de navegación
+// src/routes/PhotosPage.jsx — Galería de fotos (adjuntos categoría PHOTO)
 // ===============================
-import React, { useEffect, useMemo, useReducer, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useCenagemStore } from '@/store/cenagemStore';
 
-const STORAGE_KEY = 'cenagem-demo-v1';
-const seedNow = () => new Date().toISOString();
-const uid = () => Math.random().toString(36).slice(2, 10);
-
-// ---- Estado básico: reusamos "studies" como adjuntos generales y además guardamos "photos"
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { families: [], members: [], studies: [], photos: [] };
-}
-
-function reducer(state, action) {
-  switch (action.type) {
-    case 'ADD_PHOTO': {
-      const p = { id: uid(), createdAt: seedNow(), ...action.payload };
-      return { ...state, photos: [p, ...(state.photos || [])] };
-    }
-    case 'DELETE_PHOTO': {
-      const { id } = action.payload;
-      return { ...state, photos: (state.photos || []).filter(x => x.id !== id) };
-    }
-    default:
-      return state;
-  }
-}
-
-function usePhotoStore() {
-  const [state, dispatch] = useReducer(reducer, null, loadState);
-  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {} }, [state]);
-
-  const listMembers = (familyId) => (state.members || []).filter(m => m.familyId === familyId);
-
-  const addPhoto = (payload) => dispatch({ type: 'ADD_PHOTO', payload });
-  const deletePhoto = (id) => dispatch({ type: 'DELETE_PHOTO', payload: { id } });
-
-  return { state, listMembers, addPhoto, deletePhoto };
-}
+const PHOTO_CATEGORY = 'PHOTO';
 
 const yearsSince = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
   const now = new Date();
-  let y = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) y--;
-  return `${y}a`;
+  let years = now.getFullYear() - d.getFullYear();
+  const monthDiff = now.getMonth() - d.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < d.getDate())) years -= 1;
+  return `${years}a`;
 };
 
 function UploadPhotos({ disabled, onFiles }) {
@@ -62,7 +23,9 @@ function UploadPhotos({ disabled, onFiles }) {
       <label
         htmlFor={inputId}
         className={`px-3 py-2 rounded-xl border ${
-          disabled ? 'border-slate-200 text-slate-400' : 'border-slate-300 hover:bg-slate-50 cursor-pointer'
+          disabled
+            ? 'border-slate-200 text-slate-400'
+            : 'border-slate-300 hover:bg-slate-50 cursor-pointer'
         } flex items-center justify-center gap-2`}
       >
         <span>➕ Agregar fotos</span>
@@ -72,35 +35,176 @@ function UploadPhotos({ disabled, onFiles }) {
         type="file"
         accept="image/*"
         multiple
-        className="hidden"
         disabled={disabled}
-        onChange={(e) => onFiles && onFiles(e.target.files)}
+        className="hidden"
+        onChange={(event) => onFiles && onFiles(event.target.files)}
       />
-      <div className="text-[11px] text-slate-500">Se adjuntan al miembro activo. Se guardan como adjuntos locales.</div>
+      <div className="text-[11px] text-slate-500">
+        Las imágenes se adjuntan al miembro activo y quedan disponibles para todo el equipo.
+      </div>
     </div>
   );
 }
 
 export default function PhotosPage({ familyId, inline = false }) {
-  const { state, listMembers, addPhoto, deletePhoto } = usePhotoStore();
-  const fam = state.families.find(f => f.id === familyId);
-  const members = useMemo(() => fam ? listMembers(fam.id) : [], [fam, state.members]);
+  const {
+    state,
+    ensureFamilyDetail,
+    createAttachment,
+    deleteAttachment,
+    downloadAttachment,
+  } = useCenagemStore();
 
-  // Solo mostramos fotos de esta familia
-  const familyPhotos = useMemo(() => (state.photos || []).filter(p => p.familyId === familyId), [state.photos, familyId]);
+  useEffect(() => {
+    if (familyId) {
+      void ensureFamilyDetail(familyId, true);
+    }
+  }, [familyId, ensureFamilyDetail]);
 
-  // Filtro único por miembro (panel derecho)
+  const family = useMemo(
+    () => state.families.find((item) => item.id === familyId) || null,
+    [state.families, familyId],
+  );
+
+  const members = useMemo(
+    () => state.members.filter((member) => member.familyId === familyId),
+    [state.members, familyId],
+  );
+
+  const photos = useMemo(
+    () =>
+      state.attachments.filter(
+        (attachment) =>
+          attachment.familyId === familyId && attachment.category === PHOTO_CATEGORY,
+      ),
+    [state.attachments, familyId],
+  );
+
   const [selectedMemberId, setSelectedMemberId] = useState(() => members[0]?.id || '');
   useEffect(() => {
-    if (!selectedMemberId && members.length > 0) setSelectedMemberId(members[0].id);
+    if (!selectedMemberId && members.length > 0) {
+      setSelectedMemberId(members[0].id);
+      return;
+    }
+    if (selectedMemberId && !members.some((member) => member.id === selectedMemberId)) {
+      setSelectedMemberId(members[0]?.id || '');
+    }
   }, [members, selectedMemberId]);
 
-  const filtered = useMemo(() => {
+  const filteredPhotos = useMemo(() => {
     if (!selectedMemberId) return [];
-    return familyPhotos.filter(p => p.memberId === selectedMemberId);
-  }, [familyPhotos, selectedMemberId]);
+    return photos.filter((photo) => photo.memberId === selectedMemberId);
+  }, [photos, selectedMemberId]);
 
-  if (!fam) {
+  const [previews, setPreviews] = useState({});
+
+  useEffect(() => {
+    const validIds = new Set(photos.map((photo) => photo.id));
+    setPreviews((prev) => {
+      let changed = false;
+      const next = {};
+      Object.entries(prev).forEach(([id, entry]) => {
+        if (validIds.has(id)) {
+          next[id] = entry;
+        } else {
+          if (entry.generated) URL.revokeObjectURL(entry.url);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [photos]);
+
+  useEffect(() => () => {
+    Object.values(previews).forEach((entry) => {
+      if (entry.generated) {
+        URL.revokeObjectURL(entry.url);
+      }
+    });
+  }, [previews]);
+
+  useEffect(() => {
+    const missing = filteredPhotos.filter((photo) => !previews[photo.id]);
+    if (!missing.length) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      for (const photo of missing) {
+        try {
+          let url;
+          let generated = false;
+          if (photo.base64Data) {
+            url = `data:${photo.contentType || 'image/*'};base64,${photo.base64Data}`;
+          } else {
+            const blob = await downloadAttachment(photo.id);
+            if (cancelled) return;
+            url = URL.createObjectURL(blob);
+            generated = true;
+          }
+          setPreviews((prev) => {
+            if (cancelled || prev[photo.id]) {
+              if (generated) URL.revokeObjectURL(url);
+              return prev;
+            }
+            return {
+              ...prev,
+              [photo.id]: { url, generated },
+            };
+          });
+        } catch (error) {
+          console.error('No se pudo obtener la imagen', error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredPhotos, previews, downloadAttachment]);
+
+  const handleUploadFiles = async (files) => {
+    if (!selectedMemberId) return;
+    const fileList = Array.from(files || []);
+    for (const file of fileList) {
+      try {
+        const attachment = await createAttachment({
+          memberId: selectedMemberId,
+          category: PHOTO_CATEGORY,
+          description: file.name,
+          file,
+        });
+        if (attachment?.id) {
+          const url = URL.createObjectURL(file);
+          setPreviews((prev) => ({
+            ...prev,
+            [attachment.id]: { url, generated: true },
+          }));
+        }
+      } catch (error) {
+        console.error('No se pudo subir la foto', error);
+      }
+    }
+  };
+
+  const handleDeletePhoto = async (attachmentId) => {
+    try {
+      await deleteAttachment(attachmentId);
+    } catch (error) {
+      console.error('No se pudo eliminar la foto', error);
+    } finally {
+      setPreviews((prev) => {
+        const next = { ...prev };
+        const entry = next[attachmentId];
+        if (entry?.generated) {
+          URL.revokeObjectURL(entry.url);
+        }
+        delete next[attachmentId];
+        return next;
+      });
+    }
+  };
+
+  if (!family) {
     return inline ? null : (
       <div className="p-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4">No se encontró la familia.</div>
@@ -113,12 +217,12 @@ export default function PhotosPage({ familyId, inline = false }) {
       {!inline && (
         <div className="mb-2 flex items-center justify-between">
           <button
-            onClick={()=>{ window.location.hash = `#/family/${fam.id}`; }}
+            onClick={() => { window.location.hash = `#/family/${family.id}`; }}
             className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
           >
             ← Volver
           </button>
-          <h2 className="text-lg font-semibold">HC {fam.code} · Fotos</h2>
+          <h2 className="text-lg font-semibold">HC {family.code} · Fotos</h2>
           <div />
         </div>
       )}
@@ -128,26 +232,30 @@ export default function PhotosPage({ familyId, inline = false }) {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm grid gap-3">
             <div className="text-sm font-semibold">Galería</div>
 
-            {filtered.length === 0 && (
+            {filteredPhotos.length === 0 && (
               <div className="text-sm text-slate-500">No hay fotos registradas para este miembro.</div>
             )}
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {filtered.map(p => {
-                const m = members.find(mm => mm.id === p.memberId);
+              {filteredPhotos.map((photo) => {
+                const member = members.find((item) => item.id === photo.memberId);
+                const preview = previews[photo.id]?.url;
                 return (
-                  <div key={p.id} className="rounded-xl border border-slate-200 overflow-hidden">
-                    <div className="aspect-square bg-slate-50">
-                      {/* Si es blob/local URL */}
-                      <img src={p.url} alt={p.caption || 'Foto'} className="w-full h-full object-cover" />
+                  <div key={photo.id} className="rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="aspect-square bg-slate-100 flex items-center justify-center">
+                      {preview ? (
+                        <img src={preview} alt={photo.description || 'Foto'} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-xs text-slate-500">Cargando vista previa…</span>
+                      )}
                     </div>
                     <div className="p-2 text-xs text-slate-600 flex items-center justify-between">
                       <div className="truncate">
-                        {(m?.filiatorios?.iniciales || m?.rol || '—')}
-                        {p.caption ? ` · ${p.caption}` : ''}
+                        {(member?.filiatorios?.iniciales || member?.rol || '—')}
+                        {photo.description ? ` · ${photo.description}` : ''}
                       </div>
                       <button
-                        onClick={()=>deletePhoto(p.id)}
+                        onClick={() => handleDeletePhoto(photo.id)}
                         className="px-2 py-1 rounded-lg border border-slate-300 hover:bg-red-50"
                         title="Eliminar"
                       >
@@ -163,32 +271,26 @@ export default function PhotosPage({ familyId, inline = false }) {
 
         <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm grid gap-3 h-fit">
           <div className="text-sm font-semibold">Miembros</div>
-          {members.map(m => (
+          {members.map((member) => (
             <button
-              key={m.id}
-              onClick={()=> setSelectedMemberId(m.id)}
-              className={`text-left px-3 py-2 rounded-xl border ${selectedMemberId===m.id ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 hover:bg-slate-50'}`}
+              key={member.id}
+              onClick={() => setSelectedMemberId(member.id)}
+              className={`text-left px-3 py-2 rounded-xl border ${
+                selectedMemberId === member.id
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'border-slate-200 hover:bg-slate-50'
+              }`}
             >
-              <div className="text-sm"><b>{m.filiatorios?.iniciales || m.rol}</b> · {m.nombre || '—'}</div>
-              <div className="text-xs text-slate-600">{yearsSince(m.nacimiento)} · OS: {m.os || '—'}</div>
+              <div className="text-sm">
+                <b>{member.filiatorios?.iniciales || member.rol}</b> · {member.nombre || '—'}
+              </div>
+              <div className="text-xs text-slate-600">
+                {yearsSince(member.nacimiento)} · OS: {member.os || '—'}
+              </div>
             </button>
           ))}
 
-          <UploadPhotos
-            disabled={!selectedMemberId}
-            onFiles={(files)=>{
-              if (!selectedMemberId) return;
-              [...files].forEach(file => {
-                const url = URL.createObjectURL(file);
-                addPhoto({
-                  familyId,
-                  memberId: selectedMemberId,
-                  url,
-                  caption: file.name
-                });
-              });
-            }}
-          />
+          <UploadPhotos disabled={!selectedMemberId} onFiles={handleUploadFiles} />
         </aside>
       </div>
 
@@ -196,7 +298,7 @@ export default function PhotosPage({ familyId, inline = false }) {
         <div className="fixed bottom-0 inset-x-0 z-20 bg-white/90 backdrop-blur border-t border-slate-200">
           <div className="mx-auto max-w-6xl px-4 py-2 flex items-center justify-center gap-2">
             <button
-              onClick={()=>{ window.location.hash = `#/family/${fam.id}`; }}
+              onClick={() => { window.location.hash = `#/family/${family.id}`; }}
               className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 shadow-sm"
             >
               ↩ Volver a HC

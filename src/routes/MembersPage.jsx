@@ -1,306 +1,355 @@
 // ===============================
-// src/routes/FamilyTreePage.jsx — Administración de miembros (sin árbol)
-// Mantiene STORAGE_KEY = 'cenagem-demo-v1'
+// src/routes/MembersPage.jsx — Administración de miembros (API)
 // ===============================
-import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCenagemStore } from '@/store/cenagemStore';
 
-const STORAGE_KEY = 'cenagem-demo-v1';
-const seedNow = () => new Date().toISOString();
-const uid = () => Math.random().toString(36).slice(2, 10);
+const DEFAULT_OS = '—';
+const DEFAULT_SEX = 'U';
+const INITIAL_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
-// -------- Estado base / store
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  const f1 = { id: uid(), code: 'FAM-000X', provincia: 'CABA', createdAt: seedNow(), updatedAt: seedNow(), tags: ['demo'] };
-  const m1 = {
-    id: uid(),
-    familyId: f1.id,
-    rol: 'proband',
-    filiatorios: { iniciales: 'A1' },
-    nombre: 'Paciente A1',
-    sexo: 'F',
-    nacimiento: '2020-01-01',
-    os: '—',
-    estado: 'vivo',
-    notas: [],
-  };
-  const seed = { families: [f1], members: [m1], evolutions: [], studies: [], pedigree: {} };
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(seed)); } catch {}
-  return seed;
-}
-
-function reducer(state, action) {
-  switch (action.type) {
-    case 'SET_PARENT': {
-      const { memberId, parentType, parentId } = action.payload;
-      const prev = state.pedigree || {};
-      const node = { ...(prev[memberId] || {}), [parentType]: parentId || '' };
-      return { ...state, pedigree: { ...prev, [memberId]: node } };
-    }
-    case 'ADD_MEMBER': {
-      const m = action.payload;
-      return { ...state, members: [...state.members, m] };
-    }
-    case 'UPDATE_MEMBER': {
-      const { id, patch } = action.payload;
-      return {
-        ...state,
-        members: state.members.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-      };
-    }
-    case 'DELETE_MEMBER': {
-      const id = action.payload;
-      // quitar del listado y limpiar referencias de pedigrí
-      const members = state.members.filter((m) => m.id !== id);
-      const pedigree = Object.fromEntries(
-        Object.entries(state.pedigree || {}).map(([cid, node]) => [
-          cid,
-          {
-            padreId: node.padreId === id ? '' : node.padreId || '',
-            madreId: node.madreId === id ? '' : node.madreId || '',
-          },
-        ])
-      );
-      return { ...state, members, pedigree };
-    }
-    case 'REWRITE_STATE':
-      return action.payload;
-    default:
-      return state;
-  }
-}
-
-function useDebouncedSave(value, delay = 200) {
-  useEffect(() => {
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-      } catch {}
-    }, delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-}
-
-function useCenagemStore() {
-  const [state, dispatch] = useReducer(reducer, null, loadState);
-  useDebouncedSave(state);
-  const listMembers = useCallback((fid) => (state.members || []).filter((m) => m.familyId === fid), [state.members]);
-  const setParent = useCallback((id, t, p) => dispatch({ type: 'SET_PARENT', payload: { memberId: id, parentType: t, parentId: p } }), []);
-  const addMember = useCallback((m) => dispatch({ type: 'ADD_MEMBER', payload: m }), []);
-  const updateMember = useCallback((id, patch) => dispatch({ type: 'UPDATE_MEMBER', payload: { id, patch } }), []);
-  const deleteMember = useCallback((id) => dispatch({ type: 'DELETE_MEMBER', payload: id }), []);
-  const reloadFromStorage = useCallback(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) dispatch({ type: 'REWRITE_STATE', payload: JSON.parse(raw) });
-    } catch {}
-  }, []);
-  return { state, listMembers, setParent, addMember, updateMember, deleteMember, reloadFromStorage };
-}
-
-// -------- Utils
 const yearsSince = (iso) => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const n = new Date();
-  let y = n.getFullYear() - d.getFullYear();
-  const m = n.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && n.getDate() < d.getDate())) y--;
-  return `${y}a`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const now = new Date();
+  let years = now.getFullYear() - date.getFullYear();
+  const monthDiff = now.getMonth() - date.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < date.getDate())) years -= 1;
+  return `${years}a`;
 };
 
-// -------- Page (Administración de miembros)
-export default function FamilyTreePage({ familyId, inline = false }) {
-  const { state, listMembers, addMember, updateMember, deleteMember, reloadFromStorage } = useCenagemStore();
+const pickInitials = (members) => {
+  const taken = new Set(
+    members
+      .map((member) => member.filiatorios?.iniciales || member.rol || '')
+      .filter(Boolean)
+      .map((value) => value.toUpperCase()),
+  );
+  for (const letter of INITIAL_LETTERS) {
+    const candidate = `${letter}1`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `N${members.length + 1}`;
+};
 
-  const fam = state.families.find((f) => f.id === familyId);
+const buildNewMemberPayload = (family, members) => ({
+  familyId: family.id,
+  rol: '',
+  filiatorios: { iniciales: pickInitials(members) },
+  nombre: '',
+  sexo: DEFAULT_SEX,
+  nacimiento: '',
+  estado: 'vivo',
+  os: DEFAULT_OS,
+  notas: [],
+});
+
+function useMembersManager(familyId) {
+  const {
+    state,
+    loading,
+    ensureFamilyDetail,
+    createMember: createMemberInStore,
+    updateMember: updateMemberInStore,
+    deleteMember: deleteMemberInStore,
+  } = useCenagemStore();
+
   useEffect(() => {
-    if (!familyId) {
-      const h = (window.location.hash || '').replace(/^#\/?/, '');
-      const [, id] = h.split('/');
-      if (id && !fam) window.location.hash = `#/family/${id}/tree`;
+    if (familyId) {
+      void ensureFamilyDetail(familyId, true);
     }
-  }, [familyId, fam]);
+  }, [familyId, ensureFamilyDetail]);
 
-  const members = useMemo(() => (fam ? listMembers(fam.id) : []), [fam, state.members, listMembers]);
+  const family = useMemo(
+    () => state.families.find((item) => item.id === familyId) || null,
+    [state.families, familyId],
+  );
 
-  // selección + búsqueda
+  const members = useMemo(
+    () => state.members.filter((member) => member.familyId === familyId),
+    [state.members, familyId],
+  );
+
+  const createMember = useCallback(
+    async (input) => {
+      if (!familyId) return null;
+      return createMemberInStore(familyId, input);
+    },
+    [createMemberInStore, familyId],
+  );
+
+  const deleteMember = useCallback(
+    async (memberId) => deleteMemberInStore(memberId),
+    [deleteMemberInStore],
+  );
+
+  const reload = useCallback(() => {
+    if (familyId) {
+      void ensureFamilyDetail(familyId, true);
+    }
+  }, [familyId, ensureFamilyDetail]);
+
+  return {
+    family,
+    members,
+    loading,
+    createMember,
+    updateMember: updateMemberInStore,
+    deleteMember,
+    reload,
+  };
+}
+
+export default function MembersPage({ familyId, inline = false }) {
+  const {
+    family,
+    members,
+    loading,
+    createMember,
+    updateMember,
+    deleteMember,
+    reload,
+  } = useMembersManager(familyId);
+
+  const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState('');
-  const [q, setQ] = useState('');
+
   useEffect(() => {
-    if (!selectedId && members.length > 0) setSelectedId(members[0].id);
-    else if (selectedId && members.length && !members.some((m) => m.id === selectedId)) setSelectedId(members[0]?.id || '');
+    if (!members.length) {
+      setSelectedId('');
+      return;
+    }
+    if (!selectedId) {
+      setSelectedId(members[0].id);
+      return;
+    }
+    if (!members.some((member) => member.id === selectedId)) {
+      setSelectedId(members[0].id);
+    }
   }, [members, selectedId]);
 
-  const filtered = useMemo(() => {
-    const k = q.trim().toLowerCase();
-    if (!k) return members;
-    return members.filter((m) => {
-      const hay = [
-        m.nombre,
-        m.filiatorios?.iniciales,
-        m.rol,
-        m.sexo,
-        m.os,
+  const filteredMembers = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) return members;
+    return members.filter((member) => {
+      const haystack = [
+        member.nombre,
+        member.filiatorios?.iniciales,
+        member.rol,
+        member.sexo,
+        member.os,
+        member.estado,
       ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
-      return hay.includes(k);
+      return haystack.includes(keyword);
     });
-  }, [q, members]);
+  }, [members, search]);
 
-  const active = members.find((m) => m.id === selectedId) || null;
+  const activeMember = useMemo(
+    () => members.find((member) => member.id === selectedId) || null,
+    [members, selectedId],
+  );
 
-  // helpers
-  const createMember = () => {
-    const m = {
-      id: uid(),
-      familyId: fam.id,
-      nombre: '',
-      filiatorios: { iniciales: `M${String(members.length + 1).padStart(2, '0')}` },
-      rol: '',
-      sexo: 'U',
-      nacimiento: '',
-      estado: 'vivo',
-      os: '—',
-      notas: [],
-    };
-    addMember(m);
-    setSelectedId(m.id);
-  };
+  const handleCreateMember = useCallback(async () => {
+    if (!family) return;
+    try {
+      const created = await createMember(buildNewMemberPayload(family, members));
+      if (created?.id) {
+        setSelectedId(created.id);
+      }
+    } catch (error) {
+      console.error('No se pudo crear el miembro', error);
+    }
+  }, [createMember, family, members]);
 
-  const markRole = (id, role) => updateMember(id, { rol: role });
-  const markSex = (id, sex) => updateMember(id, { sexo: sex });
+  const handleUpdateMember = useCallback(
+    async (memberId, patch) => {
+      try {
+        await updateMember(memberId, patch);
+      } catch (error) {
+        console.error('No se pudo actualizar el miembro', error);
+      }
+    },
+    [updateMember],
+  );
 
-  if (!fam) {
-    return inline ? null : (
-      <div className="p-6">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">No se encontró la familia.</div>
-      </div>
-    );
+  const handleDeleteMember = useCallback(
+    async (memberId) => {
+      try {
+        await deleteMember(memberId);
+        if (selectedId === memberId) {
+          setSelectedId('');
+        }
+      } catch (error) {
+        console.error('No se pudo eliminar el miembro', error);
+      }
+    },
+    [deleteMember, selectedId],
+  );
+
+  if (!family) {
+    if (loading) {
+      return inline
+        ? null
+        : (
+          <div className="p-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">Cargando familia...</div>
+          </div>
+        );
+    }
+    return inline
+      ? null
+      : (
+        <div className="p-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">No se encontró la familia solicitada.</div>
+        </div>
+      );
   }
+
+  const goBack = () => {
+    if (family?.id) {
+      window.location.hash = `#/family/${family.id}`;
+    } else {
+      window.location.hash = '#/family/';
+    }
+  };
 
   return (
     <div className={inline ? '' : 'p-6'}>
-      {/* Header */}
       {!inline && (
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <button
-            onClick={() => { window.location.hash = `#/family/${fam.id}`; }}
+            type="button"
+            onClick={goBack}
             className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
           >
             ← Volver
           </button>
-          <h2 className="text-lg font-semibold">HC {fam.code} · Miembros (administración)</h2>
-          <div className="flex items-center gap-2">
-            <button
-              className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
-              onClick={reloadFromStorage}
-              title="Recargar desde storage"
-            >
-              ↻ Recargar
-            </button>
-          </div>
+          <h2 className="text-lg font-semibold">HC {family.code} · Miembros (administración)</h2>
+          <button
+            type="button"
+            className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+            onClick={reload}
+            disabled={loading}
+          >
+            ↻ Refrescar
+          </button>
         </div>
       )}
 
-      {/* MAIN GRID: Lista + Editor */}
-      <div className="grid grid-cols-1 md:grid-cols-[380px_1fr] gap-4 min-h-[calc(100vh-6rem)]">
-        {/* Lista */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[380px_1fr] min-h-[calc(100vh-6rem)]">
         <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold">Miembros</div>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold">Miembros registrados</div>
+              <div className="text-xs text-slate-500">Seleccioná un miembro para editar su información.</div>
+            </div>
             <button
-              className="px-3 py-2 rounded-xl border border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-900"
-              onClick={createMember}
+              type="button"
+              className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+              onClick={handleCreateMember}
             >
-              + Nuevo
+              ➕ Agregar
             </button>
           </div>
 
           <input
-            className="w-full mb-3 px-3 py-2 rounded-xl border border-slate-300"
-            placeholder="Buscar por nombre, iniciales, rol, sexo, OS…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nombre, iniciales, OS..."
+            className="mb-3 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
           />
 
           <div className="grid gap-2">
-            {filtered.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setSelectedId(m.id)}
-                className={`text-left px-3 py-2 rounded-xl border ${
-                  selectedId === m.id ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="text-sm">
-                    <b>{m.filiatorios?.iniciales || '—'}</b> · {m.nombre || '—'}
+            {filteredMembers.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-200 px-3 py-2 text-sm text-slate-500">
+                No hay miembros que coincidan con la búsqueda.
+              </div>
+            )}
+            {filteredMembers.map((member) => {
+              const isActive = selectedId === member.id;
+              const buttonClass = [
+                'text-left px-3 py-2 rounded-xl border transition-colors',
+                isActive ? 'border-slate-900 bg-slate-900/10' : 'border-slate-300 hover:bg-slate-50',
+              ].join(' ');
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() => setSelectedId(member.id)}
+                  className={buttonClass}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm">
+                      <b>{member.filiatorios?.iniciales || member.rol || '—'}</b> · {member.nombre || '—'}
+                    </div>
+                    <span className="text-xs opacity-80">{member.estado || '—'}</span>
                   </div>
-                  <span className="text-[11px] opacity-80">{m.rol || '—'}</span>
-                </div>
-                <div className="text-xs text-slate-600">
-                  {m.sexo || 'U'} · {yearsSince(m.nacimiento)} · OS: {m.os || '—'}
-                </div>
-              </button>
-            ))}
-            {filtered.length === 0 && <div className="text-xs text-slate-500">Sin resultados.</div>}
+                  <div className="text-xs text-slate-600">
+                    {yearsSince(member.nacimiento)} · OS: {member.os || DEFAULT_OS}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </aside>
 
-        {/* Editor */}
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          {!active ? (
-            <div className="text-sm text-slate-500">Seleccioná un miembro para editar.</div>
+          {!activeMember ? (
+            <div className="text-sm text-slate-500">Seleccioná un integrante para editar su registro.</div>
           ) : (
             <div className="grid gap-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Editor de miembro</div>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-sm font-semibold">{activeMember.nombre || 'Miembro sin nombre'}</div>
+                  <div className="text-xs text-slate-500">
+                    HC {family.code} · {activeMember.filiatorios?.iniciales || activeMember.rol || 'Rol sin definir'}
+                  </div>
+                </div>
                 <button
-                  className="px-3 py-2 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-900"
-                  onClick={() => {
-                    const ok = confirm('Eliminar este miembro? Esta acción no se puede deshacer.');
-                    if (ok) deleteMember(active.id);
-                  }}
+                  type="button"
+                  className="px-3 py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50"
+                  onClick={() => handleDeleteMember(activeMember.id)}
                 >
-                  Eliminar
+                  🗑 Eliminar
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">Iniciales</label>
+                  <label className="mb-1 block text-xs text-slate-600">Iniciales</label>
                   <input
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                    value={active.filiatorios?.iniciales || ''}
-                    onChange={(e) =>
-                      updateMember(active.id, { filiatorios: { ...(active.filiatorios || {}), iniciales: e.target.value } })
-                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={activeMember.filiatorios?.iniciales || ''}
+                    onChange={(event) =>
+                      void handleUpdateMember(activeMember.id, {
+                        filiatorios: {
+                          ...(activeMember.filiatorios || {}),
+                          iniciales: event.target.value,
+                        },
+                      })}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">Nombre</label>
+                  <label className="mb-1 block text-xs text-slate-600">Nombre completo</label>
                   <input
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                    value={active.nombre || ''}
-                    onChange={(e) => updateMember(active.id, { nombre: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={activeMember.nombre || ''}
+                    onChange={(event) => void handleUpdateMember(activeMember.id, { nombre: event.target.value })}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">Sexo</label>
+                  <label className="mb-1 block text-xs text-slate-600">Sexo</label>
                   <select
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                    value={active.sexo || 'U'}
-                    onChange={(e) => markSex(active.id, e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={activeMember.sexo || DEFAULT_SEX}
+                    onChange={(event) => void handleUpdateMember(activeMember.id, { sexo: event.target.value })}
                   >
                     <option value="U">—</option>
                     <option value="F">F</option>
@@ -308,19 +357,19 @@ export default function FamilyTreePage({ familyId, inline = false }) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">Rol</label>
+                  <label className="mb-1 block text-xs text-slate-600">Rol</label>
                   <input
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                    value={active.rol || ''}
-                    onChange={(e) => markRole(active.id, e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={activeMember.rol || ''}
+                    onChange={(event) => void handleUpdateMember(activeMember.id, { rol: event.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">Estado</label>
+                  <label className="mb-1 block text-xs text-slate-600">Estado</label>
                   <select
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                    value={active.estado || 'vivo'}
-                    onChange={(e) => updateMember(active.id, { estado: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={activeMember.estado || 'vivo'}
+                    onChange={(event) => void handleUpdateMember(activeMember.id, { estado: event.target.value })}
                   >
                     <option value="vivo">vivo</option>
                     <option value="fallecido">fallecido</option>
@@ -328,66 +377,71 @@ export default function FamilyTreePage({ familyId, inline = false }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">Nacimiento (ISO)</label>
+                  <label className="mb-1 block text-xs text-slate-600">Nacimiento (ISO)</label>
                   <input
                     type="date"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                    value={active.nacimiento ? active.nacimiento.slice(0, 10) : ''}
-                    onChange={(e) => updateMember(active.id, { nacimiento: e.target.value || '' })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={activeMember.nacimiento ? activeMember.nacimiento.slice(0, 10) : ''}
+                    onChange={(event) =>
+                      void handleUpdateMember(activeMember.id, { nacimiento: event.target.value || '' })}
                   />
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-xs text-slate-600 mb-1">Obra social</label>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-xs text-slate-600">Obra social</label>
                   <input
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                    value={active.os || ''}
-                    onChange={(e) => updateMember(active.id, { os: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={activeMember.os || DEFAULT_OS}
+                    onChange={(event) => void handleUpdateMember(activeMember.id, { os: event.target.value })}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-slate-600 mb-1">Notas (JSON simple)</label>
+                <label className="mb-1 block text-xs text-slate-600">Notas (JSON simple)</label>
                 <textarea
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs"
                   rows={4}
-                  value={JSON.stringify(active.notas || [], null, 2)}
-                  onChange={(e) => {
+                  value={JSON.stringify(activeMember.notas || [], null, 2)}
+                  onChange={(event) => {
                     try {
-                      const val = JSON.parse(e.target.value || '[]');
-                      updateMember(active.id, { notas: Array.isArray(val) ? val : [] });
+                      const parsed = JSON.parse(event.target.value || '[]');
+                      if (Array.isArray(parsed)) {
+                        void handleUpdateMember(activeMember.id, { notas: parsed });
+                      }
                     } catch {
-                      // ignora parse errors para no romper UX
+                      // Ignorar errores de parseo
                     }
                   }}
                 />
               </div>
 
-              <div className="h-px bg-slate-200" />
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                 <button
-                  className="px-3 py-2 rounded-xl border border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900"
-                  onClick={() => markRole(active.id, 'proband')}
+                  type="button"
+                  className="rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-amber-900 hover:bg-amber-100"
+                  onClick={() => void handleUpdateMember(activeMember.id, { rol: 'Proband' })}
                 >
                   Marcar Proband
                 </button>
                 <button
-                  className="px-3 py-2 rounded-xl border border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900"
-                  onClick={() => markRole(active.id, 'M1')}
+                  type="button"
+                  className="rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-amber-900 hover:bg-amber-100"
+                  onClick={() => void handleUpdateMember(activeMember.id, { rol: 'M1' })}
                 >
                   Marcar Madre (M1)
                 </button>
                 <button
-                  className="px-3 py-2 rounded-xl border border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900"
-                  onClick={() => markRole(active.id, 'P1')}
+                  type="button"
+                  className="rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-amber-900 hover:bg-amber-100"
+                  onClick={() => void handleUpdateMember(activeMember.id, { rol: 'P1' })}
                 >
                   Marcar Padre (P1)
                 </button>
                 <button
-                  className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+                  type="button"
+                  className="rounded-xl border border-slate-300 px-3 py-2 hover:bg-slate-50"
                   onClick={() => setSelectedId('')}
                 >
                   Limpiar selección
@@ -395,7 +449,7 @@ export default function FamilyTreePage({ familyId, inline = false }) {
               </div>
 
               <div className="text-[11px] text-slate-500">
-                Esta página administra <b>miembros</b> (identidad, demografía, rol). Los vínculos de pedigrí se editan en la vista de árbol.
+                Esta página administra <b>miembros</b> (identidad, demografía, rol).
               </div>
             </div>
           )}
@@ -403,11 +457,12 @@ export default function FamilyTreePage({ familyId, inline = false }) {
       </div>
 
       {!inline && (
-        <div className="fixed bottom-0 inset-x-0 z-20 bg-white/90 backdrop-blur border-t border-slate-200">
-          <div className="mx-auto max-w-6xl px-4 py-2 flex items-center justify-center gap-2">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/90 backdrop-blur">
+          <div className="mx-auto flex max-w-6xl items-center justify-center gap-2 px-4 py-2">
             <button
-              onClick={() => { window.location.hash = `#/family/${fam.id}`; }}
-              className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 shadow-sm"
+              type="button"
+              onClick={goBack}
+              className="rounded-xl border border-slate-300 px-4 py-2 hover:bg-slate-50 shadow-sm"
             >
               ↩ Volver a HC
             </button>

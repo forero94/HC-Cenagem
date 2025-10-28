@@ -9,16 +9,24 @@ export default function LoginView({ onLogin }) {
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    const user = login(email.trim(), password);
-    if (!user) {
-      setError('Credenciales inválidas');
-      return;
-    }
     setError('');
-    onLogin(user);
+    setLoading(true);
+    try {
+      const user = await login(email.trim(), password);
+      onLogin(user);
+    } catch (err) {
+      const message =
+        err?.message && typeof err.message === 'string'
+          ? err.message
+          : 'Credenciales inválidas';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -77,7 +85,9 @@ export default function LoginView({ onLogin }) {
 
             {error && <div className="text-sm text-rose-600">{error}</div>}
 
-            <Button type="submit" className="w-full">Entrar</Button>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Ingresando…' : 'Entrar'}
+            </Button>
           </form>
 
           <div className="mt-4 text-xs text-slate-500">

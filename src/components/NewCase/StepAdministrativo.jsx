@@ -16,6 +16,13 @@ const YES_NO_OPTIONS = [
   { value: 'si', label: 'Sí' },
 ];
 
+const CONSANGUINIDAD_OPTIONS = [
+  { value: 'no', label: 'No' },
+  { value: 'posible', label: 'Posible' },
+  { value: 'confirmada', label: 'Confirmada' },
+  { value: 'desconocido', label: 'No refiere / Desconoce' },
+];
+
 export default function StepAdministrativo({ grupos, value, onChange }) {
   const v = value || {};
   const set = (field) => (e) => onChange?.(field, e.target.value);
@@ -67,10 +74,6 @@ export default function StepAdministrativo({ grupos, value, onChange }) {
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-sky-700">Fecha de consulta</span>
-          <input type="date" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.consultaFecha || ''} onChange={set('consultaFecha')} />
-        </label>
-        <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Provincia de residencia</span>
           <input className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.provincia || ''} onChange={set('provincia')} placeholder="Provincia / región" />
         </label>
@@ -97,127 +100,108 @@ export default function StepAdministrativo({ grupos, value, onChange }) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-        <label className="required flex flex-col gap-1 md:col-span-2">
-          <span className="text-xs font-medium text-emerald-700">Dirección de referencia</span>
-          <input required className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.pacienteDireccion || ''} onChange={set('pacienteDireccion')} placeholder="Calle, número, localidad" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-emerald-700">Teléfono del paciente</span>
-          <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.pacienteTelefono || ''} onChange={set('pacienteTelefono')} placeholder="(+54)" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-emerald-700">Email del paciente</span>
-          <input type="email" className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.pacienteEmail || ''} onChange={set('pacienteEmail')} placeholder="email@ejemplo.com" />
-        </label>
+        <p className="text-xs text-emerald-700 md:col-span-2">
+          Los datos de contacto, acompañantes y referentes se completan ahora en la pestaña «Datos identificatorios».
+        </p>
+      </div>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-emerald-700">Quién acompaña a la consulta</span>
-          <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.pacienteAcompanante || ''} onChange={set('pacienteAcompanante')} placeholder="Nombre de la persona acompañante" />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-emerald-700">Parentesco</span>
-          <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.pacienteAcompananteParentesco || ''} onChange={set('pacienteAcompananteParentesco')} placeholder="Madre, padre, tutor/a…" />
-        </label>
-
-        <div className="grid gap-2 rounded-2xl border border-emerald-300 bg-white/80 p-4 shadow-sm">
-          <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Padre / tutor</span>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-emerald-600">Nombre</span>
-            <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadreNombre || ''} onChange={set('tutorPadreNombre')} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-emerald-600">Apellido</span>
-            <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadreApellido || ''} onChange={set('tutorPadreApellido')} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-emerald-600">Procedencia</span>
-            <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadreProcedencia || ''} onChange={set('tutorPadreProcedencia')} placeholder="Ciudad / país" />
-          </label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="required flex flex-col gap-1">
-              <span className="text-[11px] text-emerald-600">Teléfono</span>
-              <input required className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.contactoTelefono1 || ''} onChange={set('contactoTelefono1')} placeholder="(+54)" />
+      <div className="grid gap-4 rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-rose-800">Padres, tutores y procedencia familiar</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 rounded-2xl border border-rose-200 bg-white p-4">
+            <span className="text-xs font-semibold text-rose-600 uppercase">Padre / tutor</span>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-rose-500">Nombre</span>
+              <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorPadreNombre || ''} onChange={set('tutorPadreNombre')} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-emerald-600">Consanguinidad referida</span>
-              <select className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadreConsanguinidad || ''} onChange={set('tutorPadreConsanguinidad')}>
-                <option value="">Seleccionar…</option>
-                {YES_NO_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+              <span className="text-[11px] text-rose-500">Apellido</span>
+              <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorPadreApellido || ''} onChange={set('tutorPadreApellido')} />
             </label>
-          </div>
-          <div className="grid gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Ascendencia</span>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-rose-500">Procedencia</span>
+              <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorPadreProcedencia || ''} onChange={set('tutorPadreProcedencia')} placeholder="Ciudad / país" />
+            </label>
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Apellido del padre (abuelo)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadrePadreApellido || ''} onChange={set('tutorPadrePadreApellido')} placeholder="Apellido paterno" />
+                <span className="text-[11px] text-rose-500">Teléfono</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.contactoTelefono1 || ''} onChange={set('contactoTelefono1')} placeholder="(+54)" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Procedencia del padre (abuelo)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadrePadreProcedencia || ''} onChange={set('tutorPadrePadreProcedencia')} placeholder="Ciudad / país" />
+                <span className="text-[11px] text-rose-500">Consanguinidad referida</span>
+                <select className="rounded-xl border border-rose-200 px-3 py-2 text-sm" value={v.tutorPadreConsanguinidad || ''} onChange={set('tutorPadreConsanguinidad')}>
+                  <option value="">Seleccionar…</option>
+                  {CONSANGUINIDAD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-rose-500">Apellido del padre (abuelo)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorPadrePadreApellido || ''} onChange={set('tutorPadrePadreApellido')} placeholder="Apellido paterno" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Apellido de la madre (abuela)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadreMadreApellido || ''} onChange={set('tutorPadreMadreApellido')} placeholder="Apellido materno" />
+                <span className="text-[11px] text-rose-500">Procedencia del padre (abuelo)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorPadrePadreProcedencia || ''} onChange={set('tutorPadrePadreProcedencia')} placeholder="Ciudad / país" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Procedencia de la madre (abuela)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorPadreMadreProcedencia || ''} onChange={set('tutorPadreMadreProcedencia')} placeholder="Ciudad / país" />
+                <span className="text-[11px] text-rose-500">Apellido de la madre (abuela)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorPadreMadreApellido || ''} onChange={set('tutorPadreMadreApellido')} placeholder="Apellido materno" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-rose-500">Procedencia de la madre (abuela)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorPadreMadreProcedencia || ''} onChange={set('tutorPadreMadreProcedencia')} placeholder="Ciudad / país" />
               </label>
             </div>
           </div>
-        </div>
-        <div className="grid gap-2 rounded-2xl border border-emerald-300 bg-white/80 p-4 shadow-sm">
-          <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Madre / tutora</span>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-emerald-600">Nombre</span>
-            <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadreNombre || ''} onChange={set('tutorMadreNombre')} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-emerald-600">Apellido</span>
-            <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadreApellido || ''} onChange={set('tutorMadreApellido')} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-emerald-600">Procedencia</span>
-            <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadreProcedencia || ''} onChange={set('tutorMadreProcedencia')} placeholder="Ciudad / país" />
-          </label>
-          <div className="grid gap-2 sm:grid-cols-2">
+
+          <div className="grid gap-3 rounded-2xl border border-rose-200 bg-white p-4">
+            <span className="text-xs font-semibold text-rose-600 uppercase">Madre / tutora</span>
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-emerald-600">Teléfono</span>
-              <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.contactoTelefono2 || ''} onChange={set('contactoTelefono2')} placeholder="(+54)" />
+              <span className="text-[11px] text-rose-500">Nombre</span>
+              <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorMadreNombre || ''} onChange={set('tutorMadreNombre')} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-emerald-600">Consanguinidad referida</span>
-              <select className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadreConsanguinidad || ''} onChange={set('tutorMadreConsanguinidad')}>
-                <option value="">Seleccionar…</option>
-                {YES_NO_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+              <span className="text-[11px] text-rose-500">Apellido</span>
+              <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorMadreApellido || ''} onChange={set('tutorMadreApellido')} />
             </label>
-          </div>
-          <div className="grid gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Ascendencia</span>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-rose-500">Procedencia</span>
+              <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorMadreProcedencia || ''} onChange={set('tutorMadreProcedencia')} placeholder="Ciudad / país" />
+            </label>
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Apellido del padre (abuelo)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadrePadreApellido || ''} onChange={set('tutorMadrePadreApellido')} placeholder="Apellido paterno" />
+                <span className="text-[11px] text-rose-500">Teléfono</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.contactoTelefono2 || ''} onChange={set('contactoTelefono2')} placeholder="(+54)" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Procedencia del padre (abuelo)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadrePadreProcedencia || ''} onChange={set('tutorMadrePadreProcedencia')} placeholder="Ciudad / país" />
+                <span className="text-[11px] text-rose-500">Consanguinidad referida</span>
+                <select className="rounded-xl border border-rose-200 px-3 py-2 text-sm" value={v.tutorMadreConsanguinidad || ''} onChange={set('tutorMadreConsanguinidad')}>
+                  <option value="">Seleccionar…</option>
+                  {CONSANGUINIDAD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-rose-500">Apellido del padre (abuelo)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorMadrePadreApellido || ''} onChange={set('tutorMadrePadreApellido')} placeholder="Apellido paterno" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Apellido de la madre (abuela)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadreMadreApellido || ''} onChange={set('tutorMadreMadreApellido')} placeholder="Apellido materno" />
+                <span className="text-[11px] text-rose-500">Procedencia del padre (abuelo)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorMadrePadreProcedencia || ''} onChange={set('tutorMadrePadreProcedencia')} placeholder="Ciudad / país" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-emerald-600">Procedencia de la madre (abuela)</span>
-                <input className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 placeholder:text-emerald-400 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" value={v.tutorMadreMadreProcedencia || ''} onChange={set('tutorMadreMadreProcedencia')} placeholder="Ciudad / país" />
+                <span className="text-[11px] text-rose-500">Apellido de la madre (abuela)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorMadreMadreApellido || ''} onChange={set('tutorMadreMadreApellido')} placeholder="Apellido materno" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-rose-500">Procedencia de la madre (abuela)</span>
+                <input className="rounded-xl border border-rose-200 px-3 py-2" value={v.tutorMadreMadreProcedencia || ''} onChange={set('tutorMadreMadreProcedencia')} placeholder="Ciudad / país" />
               </label>
             </div>
           </div>

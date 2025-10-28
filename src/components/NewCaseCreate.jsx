@@ -34,7 +34,14 @@ const ADMIN_INITIAL_FORM = {
 
 const WIZARD_STEPS_LABELS = ['Administrativo', 'Motivo', 'Paciente', 'Específico', 'Resumen'];
 
-export default function NewCaseCreate({ currentUser, onCreate, onCancel, busy = false }) {
+export default function NewCaseCreate({
+  currentUser,
+  onCreate,
+  onCancel,
+  busy = false,
+  errorMessage = '',
+  onDismissError = () => {},
+}) {
   const [form, setForm] = useState(ADMIN_INITIAL_FORM);
 
   useEffect(() => {
@@ -43,16 +50,22 @@ export default function NewCaseCreate({ currentUser, onCreate, onCancel, busy = 
     }
   }, [currentUser]);
 
-  const canCreate = useMemo(() => (
-    form.pacienteNombre &&
-    form.pacienteApellido &&
-    form.pacienteDni &&
-    form.pacienteNacimiento &&
-    form.motivoGroup &&
-    form.contactoTelefono1 &&
-    form.pacienteDireccion &&
-    form.pacienteObraSocial
-  ), [form]);
+  const canCreate = useMemo(() => {
+    const nombre = (form.pacienteNombre || '').trim();
+    const apellido = (form.pacienteApellido || '').trim();
+    const dni = (form.pacienteDni || '').trim();
+    const nacimiento = (form.pacienteNacimiento || '').trim();
+    const grupo = (form.motivoGroup || '').trim();
+    const cobertura = (form.pacienteObraSocial || '').trim();
+    return Boolean(nombre && apellido && dni && nacimiento && grupo && cobertura);
+  }, [
+    form.pacienteNombre,
+    form.pacienteApellido,
+    form.pacienteDni,
+    form.pacienteNacimiento,
+    form.motivoGroup,
+    form.pacienteObraSocial,
+  ]);
 
   const handleAdminChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -60,11 +73,13 @@ export default function NewCaseCreate({ currentUser, onCreate, onCancel, busy = 
 
   const handleCreate = () => {
     if (!canCreate || busy) return;
+    onDismissError?.();
     onCreate?.(form);
   };
 
   const handleCancel = () => {
     setForm(ADMIN_INITIAL_FORM);
+    onDismissError?.();
     onCancel?.();
   };
 
@@ -109,6 +124,19 @@ export default function NewCaseCreate({ currentUser, onCreate, onCancel, busy = 
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 grid gap-6">
+        {errorMessage && (
+          <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div className="pt-1 font-semibold text-rose-600">Atención</div>
+            <div className="flex-1 leading-relaxed">{errorMessage}</div>
+            <button
+              type="button"
+              onClick={() => onDismissError?.()}
+              className="ml-4 text-xs font-medium text-rose-600 hover:text-rose-700"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
         <p className="text-sm text-slate-600">
           Completá los datos administrativos para generar la nueva historia clínica. Luego, cuando el equipo ingrese a la HC por primera vez, podrá completar la información clínica con el asistente.
         </p>

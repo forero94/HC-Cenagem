@@ -1,4 +1,6 @@
 import React, { useMemo } from 'react';
+import { getEnfermedadActualLayout } from './enfermedadActualGuides';
+import { IDENTIFICATION_SECTIONS, ANTECEDENTES_SECTIONS, EXAM_SECTIONS } from './pacienteStepLayout';
 
 function calculateAgeYears(iso) {
 
@@ -32,12 +34,16 @@ const CONSANGUINIDAD_OPTIONS = [
 
 ];
 
-const YES_NO_OPTIONS = [
-  { value: 'no', label: 'No' },
-  { value: 'si', label: 'Sí' },
-];
+export default function StepPaciente({
+  value = {},
+  secciones = [],
+  grupos = [],
+  edad: edadDesdePadre,
+  onChange,
+  mode = 'historia',
+}) {
 
-export default function StepPaciente({ value = {}, secciones = [], grupos = [], edad: edadDesdePadre, onChange }) {
+  const normalizedMode = ['historia', 'antecedentes', 'examen', 'identificacion'].includes(mode) ? mode : 'historia';
 
   const v = value;
 
@@ -46,8 +52,6 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
   const edadCalculada = useMemo(() => calculateAgeYears(v.pacienteNacimiento), [v.pacienteNacimiento]);
 
   const edad = edadDesdePadre ?? edadCalculada ?? null;
-
-  const esMenor = Number.isFinite(edad) ? edad < 18 : false;
 
   const sectionSet = useMemo(() => {
 
@@ -69,173 +73,243 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
     return [group.label, detail?.label].filter(Boolean).join(' · ');
   }, [grupos, v.motivoGroup, v.motivoDetail]);
 
-  const showPadres = esMenor || Boolean([
-    v.tutorPadreNombre,
-    v.tutorPadreApellido,
-    v.tutorPadreProcedencia,
-    v.tutorPadreConsanguinidad,
-    v.tutorPadrePadreApellido,
-    v.tutorPadrePadreProcedencia,
-    v.tutorPadreMadreApellido,
-    v.tutorPadreMadreProcedencia,
-    v.contactoTelefono1,
-    v.tutorMadreNombre,
-    v.tutorMadreApellido,
-    v.tutorMadreProcedencia,
-    v.tutorMadreConsanguinidad,
-    v.tutorMadrePadreApellido,
-    v.tutorMadrePadreProcedencia,
-    v.tutorMadreMadreApellido,
-    v.tutorMadreMadreProcedencia,
-    v.contactoTelefono2,
-  ].some(Boolean));
+  const enfermedadLayout = useMemo(
+    () => getEnfermedadActualLayout(v.motivoGroup, v.motivoDetail),
+    [v.motivoGroup, v.motivoDetail],
+  );
+
+  const hasIdentification = IDENTIFICATION_SECTIONS.some((key) => sectionSet.has(key));
+  const showHistoria = normalizedMode === 'historia';
+  const showAntecedentes = normalizedMode === 'antecedentes';
+  const showIdentificacion = normalizedMode === 'identificacion';
+  const showExamen = normalizedMode === 'examen';
+  const hasAntecedentesContent = ANTECEDENTES_SECTIONS.some((key) => sectionSet.has(key));
+  const hasIdentificacionContent = hasIdentification;
+  const hasExamenContent = EXAM_SECTIONS.some((key) => sectionSet.has(key));
 
   return (
 
     <div className="grid gap-6">
 
-      {show('id') && (
+      {normalizedMode === 'antecedentes' && !hasAntecedentesContent && (
+        <section className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
+          No hay antecedentes adicionales requeridos para este motivo. Podés continuar al siguiente paso.
+        </section>
+      )}
 
+      {normalizedMode === 'identificacion' && !hasIdentificacionContent && (
+        <section className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
+          No hay campos de identificación configurados para este motivo.
+        </section>
+      )}
+
+      {normalizedMode === 'examen' && !hasExamenContent && (
+        <section className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
+          No hay campos de examen físico configurados para este motivo. Podés continuar al siguiente paso.
+        </section>
+      )}
+
+      {showHistoria && (
+
+        <section className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+
+        <header className="grid gap-1">
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+
+            <h2 className="text-sm font-semibold text-slate-700">{enfermedadLayout.title}</h2>
+
+            {motivoSeleccionado ? (
+
+              <span className="rounded-full bg-slate-900/5 px-3 py-[3px] text-[11px] font-medium text-slate-600">{motivoSeleccionado}</span>
+
+            ) : null}
+
+          </div>
+
+          <p className="text-xs text-slate-500">{enfermedadLayout.description}</p>
+
+        </header>
+
+        {enfermedadLayout.focus ? (
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">{enfermedadLayout.focus}</div>
+
+        ) : null}
+
+        {enfermedadLayout.tips && enfermedadLayout.tips.length > 0 ? (
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+
+            <span className="text-[11px] font-semibold text-slate-500">Recordá incluir:</span>
+
+            <ul className="mt-1 list-disc pl-4 text-[11px] text-slate-500">
+
+              {enfermedadLayout.tips.map((tip) => (
+
+                <li key={tip}>{tip}</li>
+
+              ))}
+
+            </ul>
+
+          </div>
+
+        ) : null}
+
+        <div className="grid gap-3 md:grid-cols-2">
+
+          {enfermedadLayout.fields.map((field) => (
+
+            <label key={field.name} className={`flex flex-col gap-1 ${field.colSpan || ''}`}>
+
+              <span className="text-xs text-slate-500">{field.label}</span>
+
+              <textarea
+
+                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[88px] text-sm"
+
+                value={v[field.name] || ''}
+
+                onChange={set(field.name)}
+
+                placeholder={field.placeholder}
+
+              />
+
+              {field.helper ? (
+
+                <span className="text-[11px] text-slate-400">{field.helper}</span>
+
+              ) : null}
+
+            </label>
+
+          ))}
+
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+
+          <div className="grid gap-2">
+
+            <span className="font-semibold text-slate-600">Referencia del paso Motivo</span>
+
+            {v.motivoPaciente ? (
+
+              <p className="text-sm text-slate-600">{v.motivoPaciente}</p>
+
+            ) : (
+
+              <p>Completá el relato principal en el paso Motivo para tenerlo disponible acá.</p>
+
+            )}
+
+            {v.motivoDerivacion ? (
+
+              <p className="text-[11px] text-slate-500"><span className="font-semibold text-slate-600">Motivo de derivación:</span> {v.motivoDerivacion}</p>
+
+            ) : null}
+
+          </div>
+
+        </div>
+
+      </section>
+      )}
+
+      {show('id') && normalizedMode === 'identificacion' && (
         <section className="grid gap-4">
-
           <h2 className="text-sm font-semibold text-slate-700">Datos de identificación</h2>
 
           <div className="grid gap-3 md:grid-cols-3">
-
             <label className="required flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Nº HC / AG</span>
-
-              <input required className="rounded-xl border border-slate-300 px-3 py-2 uppercase" value={v.agNumber || ''} onChange={(e) => onChange?.('agNumber', e.target.value.toUpperCase())} placeholder="AG-0001" />
-
-            </label>
-
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-4">
-
-            <label className="required flex flex-col gap-1">
-
               <span className="text-xs text-slate-500">Nombre</span>
-
               <input required className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteNombre || ''} onChange={set('pacienteNombre')} placeholder="Nombre(s)" />
-
             </label>
-
             <label className="required flex flex-col gap-1">
-
               <span className="text-xs text-slate-500">Apellido</span>
-
               <input required className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteApellido || ''} onChange={set('pacienteApellido')} placeholder="Apellido(s)" />
-
             </label>
-
-            <label className="required flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Fecha de nacimiento</span>
-
-              <input required type="date" className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteNacimiento || ''} onChange={set('pacienteNacimiento')} />
-
-            </label>
-
             <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Edad cronológica</span>
-
-              <input className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2" value={edad != null ? String(edad) : ''} placeholder="Automática" readOnly />
-
+              <span className="text-xs text-slate-500">Nº HC / AG</span>
+              <input className="rounded-xl border border-slate-300 px-3 py-2 uppercase" value={v.agNumber || ''} onChange={(e) => onChange?.('agNumber', e.target.value.toUpperCase())} placeholder="AG-0001" />
             </label>
-
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-4">
-
-            <label className="required flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Sexo</span>
-
-              <select required className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteSexo || ''} onChange={set('pacienteSexo')}>
-
-                <option value="">Seleccionar…</option>
-
-                <option value="F">Femenino</option>
-
-                <option value="M">Masculino</option>
-
-                <option value="X">No binario / Intersex / Prefiere no decir</option>
-
-              </select>
-
-            </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Fecha de consulta</span>
-
-              <input type="date" className="rounded-xl border border-slate-300 px-3 py-2" value={v.consultaFecha || ''} onChange={set('consultaFecha')} />
-
-            </label>
-
-            <label className="flex flex-col gap-1 md:col-span-2">
-
-              <span className="text-xs text-slate-500">Motivo de consulta (CENAGEM)</span>
-              {motivoSeleccionado && (
-                <span className="text-[11px] text-slate-400">Seleccionado en Motivo: {motivoSeleccionado}</span>
-              )}
-
-              <textarea
-                className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 min-h-[70px]"
-                value={v.motivoPaciente || ''}
-                placeholder="Retraso madurativo, dificultades de aprendizaje, regresión, sospecha sindrómica…"
-                readOnly
-              />
-              <span className="text-[11px] text-slate-400">Para modificarlo regresá al paso Motivo.</span>
-
-            </label>
-
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
-
+            <label className="required flex flex-col gap-1">
+              <span className="text-xs text-slate-500">DNI</span>
+              <input required className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteDni || ''} onChange={set('pacienteDni')} placeholder="Documento" />
+            </label>
+            <label className="required flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Fecha de nacimiento</span>
+              <input required type="date" className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteNacimiento || ''} onChange={set('pacienteNacimiento')} />
+            </label>
             <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Sexo / Identidad</span>
+              <select className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteSexo || ''} onChange={set('pacienteSexo')}>
+                <option value="">Seleccionar…</option>
+                <option value="F">Femenino</option>
+                <option value="M">Masculino</option>
+                <option value="X">No binario / Intersex / Prefiere no decir</option>
+              </select>
+            </label>
+          </div>
 
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Fecha de consulta</span>
+              <input type="date" className="rounded-xl border border-slate-300 px-3 py-2" value={v.consultaFecha || ''} onChange={set('consultaFecha')} />
+            </label>
+            <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Escolaridad actual</span>
-
               <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteEscolaridad || ''} onChange={set('pacienteEscolaridad')} placeholder="Nivel, institución" />
-
             </label>
-
-            <label className="flex flex-col gap-1 md:col-span-2">
-
+            <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Rendimiento escolar</span>
-
               <textarea className="rounded-xl border border-slate-300 px-3 py-2 min-h-[70px]" value={v.pacienteEscolaridadRendimiento || ''} onChange={set('pacienteEscolaridadRendimiento')} placeholder="Fortalezas, dificultades, adaptaciones" />
-
             </label>
-
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-
             <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Acompañante (parentesco)</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteAcompananteParentesco || ''} onChange={set('pacienteAcompananteParentesco')} placeholder="Madre, padre, tutor/a…" />
-
+              <span className="text-xs text-slate-500">Dirección</span>
+              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteDireccion || ''} onChange={set('pacienteDireccion')} placeholder="Calle, número, localidad" />
             </label>
-
-           
-
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Correo electrónico</span>
+              <input type="email" className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteEmail || ''} onChange={set('pacienteEmail')} placeholder="email@ejemplo.com" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Teléfono del paciente</span>
+              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteTelefono || ''} onChange={set('pacienteTelefono')} placeholder="(+54)" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Obra social / cobertura</span>
+              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteObraSocial || ''} onChange={set('pacienteObraSocial')} placeholder="Nombre de la cobertura" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Nº de afiliado</span>
+              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteObraSocialNumero || ''} onChange={set('pacienteObraSocialNumero')} placeholder="Número / credencial" />
+            </label>
           </div>
 
-          
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Quién acompaña a la consulta</span>
+              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteAcompanante || ''} onChange={set('pacienteAcompanante')} placeholder="Nombre de la persona acompañante" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Parentesco del acompañante</span>
+              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteAcompananteParentesco || ''} onChange={set('pacienteAcompananteParentesco')} placeholder="Madre, padre, tutor/a…" />
+            </label>
+          </div>
 
         </section>
-
       )}
 
-      {show('paciente') && (
+      {showAntecedentes && show('paciente') && (
 
         <section className="grid gap-4">
 
@@ -285,66 +359,25 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('paciente') && (
+      {showAntecedentes && show('paciente') && (
 
         <section className="grid gap-4">
 
           <h2 className="text-sm font-semibold text-slate-700">Contexto actual y antecedentes personales</h2>
 
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             <label className="flex flex-col gap-1">
-
               <span className="text-xs text-slate-500">Profesión / actividad</span>
-
               <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteProfesion || ''} onChange={set('pacienteProfesion')} placeholder="Actividad habitual del paciente" />
-
             </label>
-
             <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Dirección</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteDireccion || ''} onChange={set('pacienteDireccion')} placeholder="Calle, número, localidad" />
-
+              <span className="text-xs text-slate-500">Hábitos relevantes</span>
+              <textarea className="rounded-xl border border-slate-300 px-3 py-2 min-h-[70px]" value={v.pacienteHabitos || ''} onChange={set('pacienteHabitos')} placeholder="Consumo de sustancias, actividad física, alimentación, exposiciones" />
             </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Correo electrónico</span>
-
-              <input type="email" className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteEmail || ''} onChange={set('pacienteEmail')} placeholder="email@ejemplo.com" />
-
+            <label className="flex flex-col gap-1 md:col-span-2 lg:col-span-1">
+              <span className="text-xs text-slate-500">Apoyos psicosociales</span>
+              <textarea className="rounded-xl border border-slate-300 px-3 py-2 min-h-[70px]" value={v.pacienteApoyosPsicosociales || ''} onChange={set('pacienteApoyosPsicosociales')} placeholder="Red familiar, acompañante terapéutico, dispositivos institucionales" />
             </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Teléfono de contacto</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteTelefono || ''} onChange={set('pacienteTelefono')} placeholder="(+54)" />
-
-            </label>
-
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Obra social / cobertura</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteObraSocial || ''} onChange={set('pacienteObraSocial')} placeholder="Nombre de la cobertura" />
-
-            </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-xs text-slate-500">Nº de afiliado</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteObraSocialNumero || ''} onChange={set('pacienteObraSocialNumero')} placeholder="Número / credencial" />
-
-            </label>
-
           </div>
 
           <h3 className="text-xs font-semibold uppercase text-slate-500 tracking-wide">Antecedentes personales patológicos</h3>
@@ -393,7 +426,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('perinatal') && (
+      {showAntecedentes && show('perinatal') && (
 
         <section className="grid gap-4">
 
@@ -549,219 +582,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {showPadres && (
-
-        <div className="grid gap-3 md:grid-cols-2">
-
-          <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-4">
-
-            <span className="text-xs font-semibold text-slate-600 uppercase">Padre / tutor</span>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-[11px] text-slate-500">Nombre</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorPadreNombre || ''} onChange={set('tutorPadreNombre')} />
-
-            </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-[11px] text-slate-500">Apellido</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorPadreApellido || ''} onChange={set('tutorPadreApellido')} />
-
-            </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-[11px] text-slate-500">Procedencia</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorPadreProcedencia || ''} onChange={set('tutorPadreProcedencia')} placeholder="Ciudad / país" />
-
-            </label>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-
-              <label className="flex flex-col gap-1">
-
-                <span className="text-[11px] text-slate-500">Teléfono</span>
-
-                <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.contactoTelefono1 || ''} onChange={set('contactoTelefono1')} placeholder="(+54)" />
-
-              </label>
-
-              <label className="flex flex-col gap-1">
-
-                <span className="text-[11px] text-slate-500">Consanguinidad referida</span>
-
-                <select className="rounded-xl border border-slate-300 px-3 py-2 text-sm" value={v.tutorPadreConsanguinidad || ''} onChange={set('tutorPadreConsanguinidad')}>
-
-                  <option value="">Seleccionar…</option>
-
-                  {YES_NO_OPTIONS.map((option) => (
-
-                    <option key={option.value} value={option.value}>{option.label}</option>
-
-                  ))}
-
-                </select>
-
-              </label>
-
-            </div>
-
-            <div className="grid gap-2">
-
-              <span className="text-[11px] font-semibold text-slate-600 uppercase">Ascendencia</span>
-
-              <div className="grid gap-2 sm:grid-cols-2">
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Apellido del padre (abuelo)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorPadrePadreApellido || ''} onChange={set('tutorPadrePadreApellido')} placeholder="Apellido paterno" />
-
-                </label>
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Procedencia del padre (abuelo)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorPadrePadreProcedencia || ''} onChange={set('tutorPadrePadreProcedencia')} placeholder="Ciudad / país" />
-
-                </label>
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Apellido de la madre (abuela)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorPadreMadreApellido || ''} onChange={set('tutorPadreMadreApellido')} placeholder="Apellido materno" />
-
-                </label>
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Procedencia de la madre (abuela)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorPadreMadreProcedencia || ''} onChange={set('tutorPadreMadreProcedencia')} placeholder="Ciudad / país" />
-
-                </label>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-4">
-
-            <span className="text-xs font-semibold text-slate-600 uppercase">Madre / tutora</span>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-[11px] text-slate-500">Nombre</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorMadreNombre || ''} onChange={set('tutorMadreNombre')} />
-
-            </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-[11px] text-slate-500">Apellido</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorMadreApellido || ''} onChange={set('tutorMadreApellido')} />
-
-            </label>
-
-            <label className="flex flex-col gap-1">
-
-              <span className="text-[11px] text-slate-500">Procedencia</span>
-
-              <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorMadreProcedencia || ''} onChange={set('tutorMadreProcedencia')} placeholder="Ciudad / país" />
-
-            </label>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-
-              <label className="flex flex-col gap-1">
-
-                <span className="text-[11px] text-slate-500">Teléfono</span>
-
-                <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.contactoTelefono2 || ''} onChange={set('contactoTelefono2')} placeholder="(+54)" />
-
-              </label>
-
-              <label className="flex flex-col gap-1">
-
-                <span className="text-[11px] text-slate-500">Consanguinidad referida</span>
-
-                <select className="rounded-xl border border-slate-300 px-3 py-2 text-sm" value={v.tutorMadreConsanguinidad || ''} onChange={set('tutorMadreConsanguinidad')}>
-
-                  <option value="">Seleccionar…</option>
-
-                  {YES_NO_OPTIONS.map((option) => (
-
-                    <option key={option.value} value={option.value}>{option.label}</option>
-
-                  ))}
-
-                </select>
-
-              </label>
-
-            </div>
-
-            <div className="grid gap-2">
-
-              <span className="text-[11px] font-semibold text-slate-600 uppercase">Ascendencia</span>
-
-              <div className="grid gap-2 sm:grid-cols-2">
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Apellido del padre (abuelo)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorMadrePadreApellido || ''} onChange={set('tutorMadrePadreApellido')} placeholder="Apellido paterno" />
-
-                </label>
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Procedencia del padre (abuelo)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorMadrePadreProcedencia || ''} onChange={set('tutorMadrePadreProcedencia')} placeholder="Ciudad / país" />
-
-                </label>
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Apellido de la madre (abuela)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorMadreMadreApellido || ''} onChange={set('tutorMadreMadreApellido')} placeholder="Apellido materno" />
-
-                </label>
-
-                <label className="flex flex-col gap-1">
-
-                  <span className="text-[11px] text-slate-500">Procedencia de la madre (abuela)</span>
-
-                  <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.tutorMadreMadreProcedencia || ''} onChange={set('tutorMadreMadreProcedencia')} placeholder="Ciudad / país" />
-
-                </label>
-
-              </div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      )}
-
-      {show('antropometria') && (
+      {showExamen && show('antropometria') && (
 
         <section className="grid gap-4">
 
@@ -847,7 +668,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('examenGenetico') && (
+      {showExamen && show('examenGenetico') && (
 
         <section className="grid gap-4">
 
@@ -905,7 +726,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('monogenicas') && (
+      {showAntecedentes && show('monogenicas') && (
 
         <section className="grid gap-3">
 
@@ -965,7 +786,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('neurodesarrollo') && (
+      {showAntecedentes && show('neurodesarrollo') && (
 
         <section className="grid gap-4">
 
@@ -1035,7 +856,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('metabolismo') && (
+      {showAntecedentes && show('metabolismo') && (
 
         <section className="grid gap-3">
 
@@ -1073,7 +894,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('prenatal') && (
+      {showAntecedentes && show('prenatal') && (
 
         <section className="grid gap-3">
 
@@ -1123,7 +944,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('obstetricos') && (
+      {showAntecedentes && show('obstetricos') && (
 
         <section className="grid gap-3">
 
@@ -1141,7 +962,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('reproductivo') && (
+      {showAntecedentes && show('reproductivo') && (
 
         <section className="grid gap-3">
 
@@ -1191,7 +1012,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('oncologia') && (
+      {showAntecedentes && show('oncologia') && (
 
         <section className="grid gap-3">
 
@@ -1241,7 +1062,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('incidental') && (
+      {showAntecedentes && show('incidental') && (
 
         <section className="grid gap-3">
 
@@ -1279,7 +1100,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('consanguinidad') && (
+      {showAntecedentes && show('consanguinidad') && (
 
         <section className="grid gap-3">
 
@@ -1317,7 +1138,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('familia') && (
+      {showAntecedentes && show('familia') && (
 
         <section className="grid gap-4">
 
@@ -1367,7 +1188,7 @@ export default function StepPaciente({ value = {}, secciones = [], grupos = [], 
 
       )}
 
-      {show('abuelos') && (
+      {showAntecedentes && show('abuelos') && (
 
         <section className="grid gap-3">
 

@@ -1,183 +1,646 @@
 // ===============================
-// src/store/cenagemStore.js — Store simulado con persistencia localStorage
+// src/store/cenagemStore.js — Bridge entre frontend y API oficial
 // ===============================
-import { useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { cenagemApi } from '@/lib/apiClient';
 
-export const STORAGE_KEY = 'cenagem-demo-v1';
-const seedNow = () => new Date().toISOString();
-const uid = () => Math.random().toString(36).slice(2, 10);
+export const STORAGE_KEY = 'cenagem-api-v1';
 
-const initialSeed = () => {
-  const f1 = { id: uid(), code: 'FAM-0001', provincia: 'Buenos Aires', createdAt: seedNow(), updatedAt: seedNow(), tags: ['prenatal','NGS'] };
-  const f2 = { id: uid(), code: 'FAM-0002', provincia: 'CABA', createdAt: seedNow(), updatedAt: seedNow(), tags: ['oncogenética'] };
-  const f3 = { id: uid(), code: 'FAM-0003', provincia: 'Mendoza', createdAt: seedNow(), updatedAt: seedNow(), tags: ['infertilidad','asesoría'] };
-  const f4 = { id: uid(), code: 'FAM-0004', provincia: 'Córdoba', createdAt: seedNow(), updatedAt: seedNow(), tags: ['pediatría'] };
-  const f5 = { id: uid(), code: 'FAM-0005', provincia: 'Santa Fe', createdAt: seedNow(), updatedAt: seedNow(), tags: ['adultos','array-CGH'] };
-
-  const members = [
-    { id: uid(), familyId: f1.id, rol: 'Proband', filiatorios: { iniciales: 'A1' }, diagnostico: 'Talla baja proporcional', sexo: 'F', nacimiento: '2020-07-02', notas: [{ id: uid(), texto: 'Se solicita array-CGH' }] },
-    { id: uid(), familyId: f1.id, rol: 'Madre', filiatorios: { iniciales: 'M1' }, sexo: 'F', nacimiento: '1992-05-11', notas: [] },
-    { id: uid(), familyId: f1.id, rol: 'Padre', filiatorios: { iniciales: 'P1' }, sexo: 'M', nacimiento: '1990-01-09', notas: [] },
-
-    { id: uid(), familyId: f2.id, rol: 'Proband', filiatorios: { iniciales: 'A1' }, diagnostico: 'Historia oncológica familiar', sexo: 'M', nacimiento: '2015-12-19', notas: [] },
-    { id: uid(), familyId: f2.id, rol: 'Hermana', filiatorios: { iniciales: 'H1' }, sexo: 'F', nacimiento: '2018-03-04', notas: [] },
-
-    { id: uid(), familyId: f3.id, rol: 'Proband', filiatorios: { iniciales: 'A1' }, diagnostico: 'Infertilidad: estudio básico', sexo: 'F', nacimiento: '1993-08-21', notas: [] },
-
-    { id: uid(), familyId: f4.id, rol: 'Proband', filiatorios: { iniciales: 'A1' }, diagnostico: 'Pubertad precoz', sexo: 'M', nacimiento: '2019-10-10', notas: [] },
-    { id: uid(), familyId: f4.id, rol: 'Madre', filiatorios: { iniciales: 'M1' }, sexo: 'F', nacimiento: '1996-06-06', notas: [] },
-
-    { id: uid(), familyId: f5.id, rol: 'Proband', filiatorios: { iniciales: 'A1' }, diagnostico: 'Chequeo adulto · array-CGH', sexo: 'F', nacimiento: '1987-02-14', notas: [] },
-  ];
-
-  const evolutions = [
-    { id: uid(), memberId: members[0].id, author: 'genetista@cenagem.gob.ar', texto: 'Motivo: talla baja proporcional. Se solicita array-CGH.', at: seedNow() },
-    { id: uid(), memberId: members[3].id, author: 'genetista@cenagem.gob.ar', texto: 'Historia oncológica familiar positiva. Panel genes BRCA/HRR.', at: seedNow() },
-    { id: uid(), memberId: members[6].id, author: 'consultorio@cenagem.gob.ar', texto: 'Derivado a endocrino por pubertad precoz. Pendiente NGS.', at: seedNow() },
-  ];
-
-  const studies = [];
-  const genetics = [];
-  const photos = []; // <<— nuevo slice
-
-  return { families: [f1,f2,f3,f4,f5], members, evolutions, studies, genetics, photos };
+const EMPTY_STATE = {
+  families: [],
+  members: [],
+  evolutions: [],
+  studies: [],
+  attachments: [],
+  genetics: [],
+  photos: [],
 };
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  const seed = initialSeed();
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(seed)); } catch {}
-  return seed;
-}
+export const STATUS_FROM_API = {
+  SCHEDULED: 'Pendiente',
+  IN_ROOM: 'En sala',
+  COMPLETED: 'Atendido',
+  CANCELLED: 'Cancelado',
+  NO_SHOW: 'Ausente',
+};
 
-function reducer(state, action) {
-  switch (action.type) {
-    case 'RESET':
-      return initialSeed();
+export const STATUS_TO_API = {
+  Pendiente: 'SCHEDULED',
+  'En sala': 'IN_ROOM',
+  Atendido: 'COMPLETED',
+  Cancelado: 'CANCELLED',
+  Ausente: 'NO_SHOW',
+};
 
-    // Base
-    case 'CREATE_FAMILY': {
-      const fam = action.payload;
-      return { ...state, families: [fam, ...state.families] };
-    }
-    case 'UPDATE_FAMILY': {
-      const { familyId, patch } = action.payload;
-      return { ...state, families: state.families.map(f => f.id === familyId ? { ...f, ...patch, updatedAt: seedNow() } : f) };
-    }
-    case 'CREATE_MEMBER': {
-      const member = action.payload;
-      return { ...state, members: [member, ...state.members] };
-    }
-    case 'UPDATE_MEMBER': {
-      const { memberId, patch } = action.payload;
-      return { ...state, members: state.members.map(m => m.id === memberId ? { ...m, ...patch } : m) };
-    }
-    case 'ADD_EVOLUTION': {
-      const { memberId, texto, author } = action.payload;
-      const e = { id: uid(), memberId, texto, author, at: seedNow() };
-      return { ...state, evolutions: [e, ...state.evolutions] };
-    }
+const SEX_FROM_API = {
+  FEMALE: 'F',
+  F: 'F',
+  MALE: 'M',
+  M: 'M',
+  NON_BINARY: 'X',
+  NONBINARY: 'X',
+  NB: 'X',
+  X: 'X',
+  UNSPECIFIED: 'U',
+  UNKNOWN: 'U',
+  U: 'U',
+};
 
-    // Complementarios
-    case 'CREATE_STUDY': {
-      const s = { id: uid(), createdAt: seedNow(), ...action.payload };
-      return { ...state, studies: [s, ...(state.studies || [])] };
-    }
-    case 'DELETE_STUDY': {
-      const { id } = action.payload;
-      return { ...state, studies: (state.studies || []).filter(s => s.id !== id) };
-    }
+const SEX_TO_API = {
+  F: 'FEMALE',
+  FEMALE: 'FEMALE',
+  M: 'MALE',
+  MALE: 'MALE',
+  X: 'NON_BINARY',
+  NB: 'NON_BINARY',
+  NON_BINARY: 'NON_BINARY',
+  NONBINARY: 'NON_BINARY',
+  U: 'UNSPECIFIED',
+  UNSPECIFIED: 'UNSPECIFIED',
+};
 
-    // Genéticos
-    case 'CREATE_GENETIC': {
-      const g = { id: uid(), createdAt: seedNow(), ...action.payload };
-      return { ...state, genetics: [g, ...(state.genetics || [])] };
-    }
-    case 'UPDATE_GENETIC': {
-      const { id, patch } = action.payload;
-      return { ...state, genetics: (state.genetics || []).map(g => g.id === id ? { ...g, ...patch } : g) };
-    }
-    case 'DELETE_GENETIC': {
-      const { id } = action.payload;
-      return { ...state, genetics: (state.genetics || []).filter(g => g.id !== id) };
-    }
+const normalizeSexKey = (value) => {
+  if (typeof value !== 'string') return '';
+  return value.trim().toUpperCase().replace(/[\s-]+/g, '_');
+};
 
-    // Fotos
-    case 'CREATE_PHOTO': {
-      const p = { id: uid(), createdAt: seedNow(), ...action.payload };
-      return { ...state, photos: [p, ...(state.photos || [])] };
-    }
-    case 'DELETE_PHOTO': {
-      const { id } = action.payload;
-      return { ...state, photos: (state.photos || []).filter(p => p.id !== id) };
-    }
+const mapSexFromApi = (value) => {
+  const normalized = normalizeSexKey(value);
+  if (!normalized) return '';
+  return SEX_FROM_API[normalized] || normalized;
+};
 
-    default:
-      return state;
-  }
-}
+const mapSexToApi = (value) => {
+  if (value == null) return undefined;
+  const normalized = normalizeSexKey(String(value));
+  if (!normalized) return undefined;
+  return SEX_TO_API[normalized] || undefined;
+};
 
-export function useCenagemStore() {
-  const [state, dispatch] = useReducer(reducer, null, loadState);
-  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {} }, [state]);
+const timeToClock = (iso) => {
+  const date = new Date(iso);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
 
-  // Base
-  const listFamilies = () => state.families;
-  const listMembers = (familyId) => state.members.filter(m => m.familyId === familyId);
-  const createFamily = (data) => {
-    const fam = { id: uid(), createdAt: seedNow(), updatedAt: seedNow(), ...data };
-    dispatch({ type: 'CREATE_FAMILY', payload: fam });
-    return fam;
-  };
-  const updateFamily = (familyId, patch) => dispatch({ type: 'UPDATE_FAMILY', payload: { familyId, patch } });
-  const createMember = (familyId, data) => {
-    const member = { id: uid(), familyId, notas: [], ...data };
-    dispatch({ type: 'CREATE_MEMBER', payload: member });
-    return member;
-  };
-  const updateMember = (memberId, patch) => dispatch({ type: 'UPDATE_MEMBER', payload: { memberId, patch } });
-  const addEvolution = (memberId, texto, author) => dispatch({ type: 'ADD_EVOLUTION', payload: { memberId, texto, author } });
+const formatISODate = (iso) => {
+  const date = new Date(iso);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-  // Complementarios
-  const listStudiesByFamily = (familyId) => (state.studies || []).filter(s => s.familyId === familyId);
-  const createStudy = (payload) => dispatch({ type: 'CREATE_STUDY', payload });
-  const deleteStudy = (id) => dispatch({ type: 'DELETE_STUDY', payload: { id } });
+const mapFamily = (detail) => ({
+  id: detail.id,
+  code: detail.code,
+  status: detail.status,
+  displayName: detail.displayName || '',
+  provincia: detail.province || '',
+  ciudad: detail.city || '',
+  address: detail.address || '',
+  tags: detail.tags || [],
+  motivo: detail.motive || null,
+  motivoNotas: detail.motive?.notes || '',
+  motivoPaciente: detail.motivePatient || '',
+  motivoDerivacion: detail.motiveDerivation || '',
+  motivoNarrativa: detail.motiveNarrative || '',
+  filiatoriosContacto: detail.contactInfo || {},
+  consanguinidad: detail.consanguinity || {},
+  antecedentesObstetricos: detail.obstetricHistory || null,
+  abuelos: detail.grandparents || {},
+  intake: detail.intake || {},
+  metadata: detail.metadata || {},
+  createdAt: detail.createdAt,
+  updatedAt: detail.updatedAt,
+  membersPreview: Array.isArray(detail.membersPreview)
+    ? detail.membersPreview.map((member) => ({
+        id: member.id,
+        rol: member.role || '',
+        initials: member.initials || '',
+        nombreCompleto: member.displayName || '',
+        documento: member.documentNumber || '',
+      }))
+    : [],
+  medicoAsignado:
+    detail.metadata?.medicoAsignado ||
+    detail.intake?.administrativo?.medicoAsignado ||
+    '',
+});
 
-  // Genéticos
-  const listGeneticsByFamily = (familyId) => (state.genetics || []).filter(g => g.familyId === familyId);
-  const createGenetic = (payload) => dispatch({ type: 'CREATE_GENETIC', payload });
-  const updateGenetic = (id, patch) => dispatch({ type: 'UPDATE_GENETIC', payload: { id, patch } });
-  const deleteGenetic = (id) => dispatch({ type: 'DELETE_GENETIC', payload: { id } });
+const mapMember = (member) => {
+  const nombreCompleto = [member.givenName, member.middleName, member.lastName]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
 
-  // Fotos
-  const listPhotosByFamily = (familyId) => (state.photos || []).filter(p => p.familyId === familyId);
-  const createPhoto = (payload) => dispatch({ type: 'CREATE_PHOTO', payload });
-  const deletePhoto = (id) => dispatch({ type: 'DELETE_PHOTO', payload: { id } });
-
-  const resetDemo = () => dispatch({ type: 'RESET' });
+  const rawNotes = member.notes;
+  const notesArray =
+    Array.isArray(rawNotes)
+      ? rawNotes
+      : Array.isArray(rawNotes?.items)
+        ? rawNotes.items
+        : Array.isArray(rawNotes?.list)
+          ? rawNotes.list
+          : [];
 
   return {
-    state,
+    id: member.id,
+    familyId: member.familyId,
+    rol: member.role || member.relationship || '',
+    relationship: member.relationship || '',
+    filiatorios: {
+      iniciales: member.initials || '',
+      nombreCompleto: nombreCompleto || undefined,
+    },
+    nombre: member.givenName || '',
+    apellido: member.lastName || '',
+    sexo: mapSexFromApi(member.sex),
+    nacimiento: member.birthDate ? formatISODate(member.birthDate) : '',
+    diagnostico: member.diagnosis || '',
+    resumen: member.summary || '',
+    contacto: member.contacto || {},
+    antecedentes: member.antecedentes || {},
+    metadata: member.metadata || {},
+    notas: notesArray,
+    os: member.metadata?.os || member.os || '',
+    estado: member.metadata?.estado || '',
+  };
+};
+
+const mapEvolution = (evolution) => ({
+  id: evolution.id,
+  familyId: evolution.familyId,
+  memberId: evolution.memberId,
+  texto: evolution.note,
+  author: evolution.authorName || evolution.authorEmail || 'sin autor',
+  at: evolution.recordedAt,
+});
+
+const mapStudy = (study) => ({
+  id: study.id,
+  familyId: study.familyId,
+  memberId: study.memberId,
+  tipo: study.type || 'OTRO',
+  estado: study.status || 'REQUESTED',
+  nombre: study.name || '',
+  descripcion: study.description || '',
+  fecha: study.requestedAt ? formatISODate(study.requestedAt) : null,
+  resultadoFecha: study.resultAt ? formatISODate(study.resultAt) : null,
+  resultado: study.notes || '',
+  metadata: study.metadata || {},
+  createdAt: study.createdAt,
+});
+
+const mapAttachment = (attachment) => ({
+  id: attachment.id,
+  familyId: attachment.familyId,
+  memberId: attachment.memberId,
+  studyId: attachment.studyId,
+  fileName: attachment.fileName,
+  contentType: attachment.contentType,
+  size: attachment.size,
+  category: attachment.category,
+  description: attachment.description || '',
+  tags: attachment.tags || [],
+  base64Data: attachment.base64Data || null,
+  metadata: attachment.metadata || {},
+  createdAt: attachment.createdAt,
+});
+
+const mapAppointment = (appointment) => ({
+  id: appointment.id,
+  familyId: appointment.familyId,
+  memberId: appointment.memberId,
+  date: formatISODate(appointment.scheduledFor),
+  time: timeToClock(appointment.scheduledFor),
+  seat: appointment.seatNumber || null,
+  motivo: appointment.motive || '',
+  notas: appointment.notes || '',
+  estado: STATUS_FROM_API[appointment.status] || 'Pendiente',
+  metadata: appointment.metadata || {},
+});
+
+const upsertFamily = (families, family) => {
+  const exists = families.some((item) => item.id === family.id);
+  if (exists) {
+    return families.map((item) => (item.id === family.id ? family : item));
+  }
+  return [family, ...families];
+};
+
+const replaceForFamily = (collection, familyId, nextItems) => {
+  const filtered = collection.filter((item) => item.familyId !== familyId);
+  return [...filtered, ...nextItems];
+};
+
+const toFamilyPayload = (data) => ({
+  code: data.code,
+  displayName: data.displayName || data.nombreVisible || undefined,
+  status: data.status,
+  province: data.provincia,
+  city: data.ciudad,
+  address: data.address || data.direccion,
+  tags: data.tags,
+  motive:
+    data.motivo && (data.motivo.groupId || data.motivo.detailId || data.motivo.groupLabel)
+      ? {
+          groupId: data.motivo.groupId,
+          groupLabel: data.motivo.groupLabel,
+          detailId: data.motivo.detailId,
+          detailLabel: data.motivo.detailLabel,
+          motiveNotes: data.motivoNotas || data.motivo?.notes,
+        }
+      : undefined,
+  motiveNarrative: data.motivoNarrativa,
+  motivePatient: data.motivoPaciente,
+  motiveDerivation: data.motivoDerivacion,
+  contactInfo: data.filiatoriosContacto,
+  consanguinity: data.consanguinidad,
+  obstetricHistory: data.antecedentesObstetricos,
+  grandparents: data.abuelos,
+  intake: data.intake,
+  metadata: {
+    ...(data.metadata || {}),
+    medicoAsignado: data.medicoAsignado,
+    createdBy: data.createdBy,
+  },
+});
+
+const toMemberPayload = (member, patchOnly = false) => {
+  const notesSource = member.notas ?? member.notes;
+  const sex = mapSexToApi(member.sexo ?? member.sex);
+
+  const payload = {
+    role: member.rol ?? member.role,
+    relationship: member.relationship,
+    initials: member.filiatorios?.iniciales || member.initials,
+    givenName: member.nombre ?? member.givenName,
+    middleName: member.segundoNombre || member.middleName,
+    lastName: member.apellido ?? member.lastName,
+    birthDate: member.nacimiento || member.birthDate || null,
+    sex,
+    diagnosis: member.diagnostico ?? member.diagnosis,
+    summary: member.resumen ?? member.summary,
+    contacto: member.contacto,
+    filiatorios: member.filiatorios,
+    antecedentes: member.antecedentes,
+    metadata: {
+      ...(member.metadata || {}),
+      os: member.os,
+      estado: member.estado,
+    },
+  };
+
+  if (Array.isArray(notesSource)) {
+    payload.notes = { items: notesSource };
+  } else if (notesSource && typeof notesSource === 'object') {
+    payload.notes = notesSource;
+  }
+
+  if (patchOnly) {
+    Object.keys(payload).forEach((key) => {
+      if (payload[key] === undefined) {
+        delete payload[key];
+      }
+    });
+  }
+
+  return payload;
+};
+
+const toStudyPayload = (study) => ({
+  memberId: study.memberId,
+  type: study.tipo || study.type || 'OTHER',
+  status: study.estado || study.status || 'REQUESTED',
+  name: study.nombre || study.name || '',
+  description: study.descripcion || '',
+  requestedAt: study.fecha ? new Date(`${study.fecha}T12:00:00.000Z`).toISOString() : null,
+  resultAt: study.resultadoFecha
+    ? new Date(`${study.resultadoFecha}T12:00:00.000Z`).toISOString()
+    : null,
+  notes: study.resultado || '',
+  metadata: study.metadata || {},
+});
+
+const toAttachmentPayload = async (attachment) => {
+  if (attachment.base64Data) {
+    return attachment;
+  }
+  if (!attachment.file) {
+    return attachment;
+  }
+  const base64Data = await fileToBase64(attachment.file);
+  return {
+    ...attachment,
+    fileName: attachment.file.name,
+    contentType: attachment.file.type,
+    size: attachment.file.size,
+    base64Data,
+  };
+};
+
+const fileToBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === 'string') {
+        const base64 = result.split(',').pop() || '';
+        resolve(base64);
+      } else {
+        resolve('');
+      }
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(file);
+  });
+
+export function useCenagemStore() {
+  const [state, setState] = useState(EMPTY_STATE);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const applyFamilyDetail = useCallback((detail) => {
+    const family = mapFamily(detail);
+    const members = (detail.members || []).map(mapMember);
+    const evolutions = (detail.evolutions || []).map(mapEvolution);
+    const studies = (detail.studies || []).map(mapStudy);
+    const attachments = (detail.attachments || []).map(mapAttachment);
+
+    setState((prev) => ({
+      ...prev,
+      families: upsertFamily(prev.families, family),
+      members: replaceForFamily(prev.members, family.id, members),
+      evolutions: replaceForFamily(prev.evolutions, family.id, evolutions),
+      studies: replaceForFamily(prev.studies, family.id, studies),
+      attachments: replaceForFamily(prev.attachments, family.id, attachments),
+    }));
+  }, []);
+
+  const refreshFamilies = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await cenagemApi.listFamilies({ limit: 100 });
+      const collection = Array.isArray(response?.data)
+        ? response.data
+        : Array.isArray(response)
+          ? response
+          : [];
+      if (!collection.length) {
+        setState(EMPTY_STATE);
+        setLoading(false);
+        return;
+      }
+      const details = await Promise.all(
+        collection.map(async (family) => cenagemApi.getFamily(family.id)),
+      );
+      details.forEach(applyFamilyDetail);
+    } catch (err) {
+      console.error('Error al sincronizar familias', err);
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [applyFamilyDetail]);
+
+  const ensureFamilyDetail = useCallback(
+    async (familyId, force = false) => {
+      if (!familyId) return null;
+      if (!force) {
+        const exists = state.families.some((family) => family.id === familyId);
+        if (exists) return state.families.find((family) => family.id === familyId) || null;
+      }
+      const detail = await cenagemApi.getFamily(familyId);
+      applyFamilyDetail(detail);
+      return detail;
+    },
+    [applyFamilyDetail, state.families],
+  );
+
+  useEffect(() => {
+    void refreshFamilies();
+  }, [refreshFamilies]);
+
+  const createFamily = useCallback(
+    async (data) => {
+      const payload = toFamilyPayload(data);
+      const created = await cenagemApi.createFamily(payload);
+      applyFamilyDetail(created);
+      return mapFamily(created);
+    },
+    [applyFamilyDetail],
+  );
+
+  const updateFamily = useCallback(
+    async (familyId, patch) => {
+      const payload = toFamilyPayload({ ...patch, code: patch.code });
+      const updated = await cenagemApi.updateFamily(familyId, payload);
+      applyFamilyDetail(updated);
+      return mapFamily(updated);
+    },
+    [applyFamilyDetail],
+  );
+
+  const createMember = useCallback(
+    async (familyId, input) => {
+      const payload = toMemberPayload({ ...input, familyId });
+      await cenagemApi.createFamilyMember(familyId, payload);
+      const detail = await cenagemApi.getFamily(familyId);
+      applyFamilyDetail(detail);
+      return detail.members.map(mapMember).find((member) => member.familyId === familyId);
+    },
+    [applyFamilyDetail],
+  );
+
+  const updateMember = useCallback(
+    async (memberId, patch) => {
+      const member = state.members.find((item) => item.id === memberId);
+      if (!member) return null;
+      const payload = toMemberPayload({ ...member, ...patch }, true);
+      await cenagemApi.updateFamilyMember(member.familyId, memberId, payload);
+      const detail = await cenagemApi.getFamily(member.familyId);
+      applyFamilyDetail(detail);
+      return detail.members.map(mapMember).find((item) => item.id === memberId) || null;
+    },
+    [applyFamilyDetail, state.members],
+  );
+
+  const deleteMember = useCallback(
+    async (memberId) => {
+      const member = state.members.find((item) => item.id === memberId);
+      if (!member) return;
+      await cenagemApi.deleteFamilyMember(member.familyId, memberId);
+      setState((prev) => ({
+        ...prev,
+        members: prev.members.filter((item) => item.id !== memberId),
+        evolutions: prev.evolutions.filter((item) => item.memberId !== memberId),
+        studies: prev.studies.filter((item) => item.memberId !== memberId),
+        attachments: prev.attachments.filter((item) => item.memberId !== memberId),
+      }));
+      await ensureFamilyDetail(member.familyId, true);
+    },
+    [state.members, ensureFamilyDetail],
+  );
+
+  const addEvolution = useCallback(
+    async (memberId, note, author) => {
+      const member = state.members.find((item) => item.id === memberId);
+      if (!member) return null;
+      await cenagemApi.createEvolution(member.familyId, memberId, {
+        note,
+        authorName: author,
+      });
+      const detail = await cenagemApi.getFamily(member.familyId);
+      applyFamilyDetail(detail);
+      const evolutions = (detail.evolutions || []).map(mapEvolution);
+      return evolutions.find((item) => item.memberId === memberId) || null;
+    },
+    [applyFamilyDetail, state.members],
+  );
+  const listMembers = useCallback(
+    (familyId) => state.members.filter((member) => member.familyId === familyId),
+    [state.members],
+  );
+
+  const listEvolutions = useCallback(
+    (familyId) => state.evolutions.filter((item) => item.familyId === familyId),
+    [state.evolutions],
+  );
+
+  const listStudiesByFamily = useCallback(
+    async (familyId) => {
+      await ensureFamilyDetail(familyId, true);
+      return state.studies.filter((study) => study.familyId === familyId);
+    },
+    [ensureFamilyDetail, state.studies],
+  );
+
+  const createStudy = useCallback(async (familyId, input) => {
+    const payload = toStudyPayload({ ...input, familyId });
+    const created = await cenagemApi.createFamilyStudy(familyId, payload);
+    const mapped = mapStudy(created);
+    setState((prev) => ({
+      ...prev,
+      studies: [mapped, ...prev.studies.filter((study) => study.id !== mapped.id)],
+    }));
+    return mapped;
+  }, []);
+
+  const deleteStudy = useCallback(
+    async (familyId, studyId) => {
+      await cenagemApi.deleteStudy(studyId);
+      setState((prev) => ({
+        ...prev,
+        studies: prev.studies.filter((study) => study.id !== studyId),
+      }));
+      await ensureFamilyDetail(familyId, true);
+    },
+    [ensureFamilyDetail],
+  );
+
+  const listAttachmentsByFamily = useCallback(
+    async (familyId) => {
+      const response = await cenagemApi.listFamilyAttachments(familyId);
+      const collection = Array.isArray(response?.data)
+        ? response.data
+        : Array.isArray(response)
+          ? response
+          : [];
+      const mapped = collection.map(mapAttachment);
+      setState((prev) => ({
+        ...prev,
+        attachments: replaceForFamily(prev.attachments, familyId, mapped),
+      }));
+      return mapped;
+    },
+    [],
+  );
+
+  const createAttachment = useCallback(
+    async (familyId, input) => {
+      const prepared = await toAttachmentPayload(input);
+      const payload = {
+        memberId: prepared.memberId,
+        category: prepared.category || 'PHOTO',
+        fileName: prepared.fileName,
+        contentType: prepared.contentType,
+        base64Data: prepared.base64Data,
+        description: prepared.description,
+        tags: prepared.tags,
+        metadata: prepared.metadata,
+      };
+      const created = await cenagemApi.createFamilyAttachment(familyId, payload);
+      const mapped = mapAttachment(created);
+      setState((prev) => ({
+        ...prev,
+        attachments: replaceForFamily(prev.attachments, familyId, [
+          mapped,
+          ...prev.attachments.filter(
+            (item) => item.familyId === familyId && item.id !== mapped.id,
+          ),
+        ]),
+      }));
+      return mapped;
+    },
+    [],
+  );
+
+  const deleteAttachment = useCallback(
+    async (familyId, attachmentId) => {
+      await cenagemApi.deleteAttachment(attachmentId);
+      setState((prev) => ({
+        ...prev,
+        attachments: prev.attachments.filter((item) => item.id !== attachmentId),
+      }));
+      await ensureFamilyDetail(familyId, true);
+    },
+    [ensureFamilyDetail],
+  );
+
+  const downloadAttachment = useCallback((attachmentId) => {
+    return cenagemApi.downloadAttachment(attachmentId);
+  }, []);
+
+  const storeState = useMemo(
+    () => ({
+      ...state,
+      loading,
+      error,
+    }),
+    [state, loading, error],
+  );
+
+  return {
+    state: storeState,
+    loading,
+    error,
     families: state.families,
     members: state.members,
     evolutions: state.evolutions,
-    studies: state.studies || [],
-    genetics: state.genetics || [],
-    photos: state.photos || [],
-    // base
-    listFamilies, listMembers,
-    createFamily, updateFamily,
-    createMember, updateMember,
+    studies: state.studies,
+    attachments: state.attachments,
+    refreshFamilies,
+    ensureFamilyDetail,
+    listMembers,
+    listEvolutions,
+    createFamily,
+    updateFamily,
+    createMember,
+    updateMember,
     addEvolution,
-    // slices
-    listStudiesByFamily, createStudy, deleteStudy,
-    listGeneticsByFamily, createGenetic, updateGenetic, deleteGenetic,
-    listPhotosByFamily, createPhoto, deletePhoto,
-    // misc
-    resetDemo,
-    STORAGE_KEY
+    listStudiesByFamily,
+    createStudy,
+    deleteStudy,
+    listAttachmentsByFamily,
+    createAttachment,
+    deleteAttachment,
+    downloadAttachment,
+    STATUS_FROM_API,
+    STATUS_TO_API,
+    mapAppointment,
+    STORAGE_KEY,
   };
 }

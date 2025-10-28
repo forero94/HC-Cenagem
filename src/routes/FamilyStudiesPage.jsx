@@ -7,42 +7,30 @@
 // - Botón "Agregar estudios" abre panel con formulario y adjunto opcional
 // ===============================
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCenagemStore as useFamiliesStore } from "@/store/cenagemStore";
 
-const STORAGE_KEY = "cenagem-demo-v1";
-const seedNow = () => new Date().toISOString();
-const uid = () => Math.random().toString(36).slice(2, 10);
+const SCREENING_STORAGE_KEY = "cenagem-screenings-v1";
 
-// ---- Carga inicial desde localStorage
-function loadState() {
+function loadScreeningsState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(SCREENING_STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
-  return { families: [], members: [], evolutions: [], studies: [], memberScreenings: {} };
+  return { memberScreenings: {} };
 }
 
-// ---- Reducer con soporte de estudios + screenings por miembro
-function reducer(state, action) {
+function screeningsReducer(state, action) {
   switch (action.type) {
-    case "CREATE_STUDY": {
-      const s = { id: uid(), createdAt: seedNow(), ...action.payload };
-      return { ...state, studies: [s, ...(state.studies || [])] };
-    }
-    case "DELETE_STUDY": {
-      const { id } = action.payload;
-      return { ...state, studies: (state.studies || []).filter(s => s.id !== id) };
-    }
     case "UPSERT_MEMBER_SCREENING": {
       const { memberId, key, patch } = action.payload;
-      const currentMem = (state.memberScreenings?.[memberId]) || {};
+      const currentMem = state.memberScreenings?.[memberId] || {};
       const currentItem = currentMem[key] || { ordered: false, done: false, result: "" };
       const nextItem = { ...currentItem, ...patch };
       return {
-        ...state,
         memberScreenings: {
           ...(state.memberScreenings || {}),
-          [memberId]: { ...currentMem, [key]: nextItem }
-        }
+          [memberId]: { ...currentMem, [key]: nextItem },
+        },
       };
     }
     default:
@@ -50,24 +38,71 @@ function reducer(state, action) {
   }
 }
 
-function useCenagemStore() {
-  const [state, dispatch] = useReducer(reducer, null, loadState);
+function useFamilyStudiesStore(familyId) {
+  const {
+    state: familiesState,
+    ensureFamilyDetail,
+    createStudy: createStudyApi,
+    deleteStudy: deleteStudyApi,
+    createAttachment: createAttachmentApi,
+    deleteAttachment: deleteAttachmentApi,
+    downloadAttachment,
+  } = useFamiliesStore();
+
+  const [screeningState, dispatch] = useReducer(screeningsReducer, null, loadScreeningsState);
+
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch { /* ignore */ }
-  }, [state]);
+      localStorage.setItem(SCREENING_STORAGE_KEY, JSON.stringify(screeningState));
+    } catch {
+      // ignore
+    }
+  }, [screeningState]);
 
-  const listMembers = (familyId) => (state.members || []).filter(m => m.familyId === familyId);
-  const listStudiesByFamily = (familyId) => (state.studies || []).filter(s => s.familyId === familyId);
+  useEffect(() => {
+    if (!familyId) return;
+    void ensureFamilyDetail(familyId, true);
+  }, [familyId, ensureFamilyDetail]);
 
-  const createStudy = (payload) => dispatch({ type: "CREATE_STUDY", payload });
-  const deleteStudy = (id) => dispatch({ type: "DELETE_STUDY", payload: { id } });
+  const family = useMemo(
+    () => familiesState.families.find((item) => item.id === familyId) || null,
+    [familiesState.families, familyId],
+  );
 
-  const getMemberScreening = (memberId) => (state.memberScreenings?.[memberId]) || {};
-  const upsertMemberScreening = (memberId, key, patch) => dispatch({ type: "UPSERT_MEMBER_SCREENING", payload: { memberId, key, patch } });
+  const members = useMemo(
+    () => familiesState.members.filter((member) => member.familyId === familyId),
+    [familiesState.members, familyId],
+  );
 
-  return { state, listMembers, listStudiesByFamily, createStudy, deleteStudy, getMemberScreening, upsertMemberScreening };
+  const studies = useMemo(
+    () => familiesState.studies.filter((study) => study.familyId === familyId),
+    [familiesState.studies, familyId],
+  );
+
+  const attachments = useMemo(
+    () => familiesState.attachments.filter((attachment) => attachment.familyId === familyId),
+    [familiesState.attachments, familyId],
+  );
+
+  const getMemberScreening = (memberId) =>
+    screeningState.memberScreenings?.[memberId] || {};
+
+  const upsertMemberScreening = (memberId, key, patch) =>
+    dispatch({ type: "UPSERT_MEMBER_SCREENING", payload: { memberId, key, patch } });
+
+  return {
+    family,
+    members,
+    studies,
+    attachments,
+    createStudy: (payload) => createStudyApi(familyId, payload),
+    deleteStudy: (studyId) => deleteStudyApi(familyId, studyId),
+    createAttachment: (payload) => createAttachmentApi(familyId, payload),
+    deleteAttachment: (attachmentId) => deleteAttachmentApi(familyId, attachmentId),
+    downloadAttachment,
+    getMemberScreening,
+    upsertMemberScreening,
+  };
 }
 
 // ---- Utils UI
@@ -280,21 +315,21 @@ function AgregarEstudioUpload({ disabled, onCreate }) {
 }
 
 export default function FamilyStudiesPage({ familyId, inline = false }) {
-  const { state, createStudy, deleteStudy, upsertMemberScreening } = useCenagemStore();
-
-  const fam = state.families.find(f => f.id === familyId) || null;
+  const {
+    family: fam,
+    members,
+    studies,
+    attachments,
+    createStudy,
+    deleteStudy,
+    createAttachment,
+    deleteAttachment,
+    downloadAttachment,
+    getMemberScreening,
+    upsertMemberScreening,
+  } = useFamilyStudiesStore(familyId);
 
   const [selectedMemberId, setSelectedMemberId] = useState("");
-
-  const members = useMemo(() => {
-    if (!fam) return [];
-    return (state.members || []).filter(m => m.familyId === fam.id);
-  }, [fam, state.members]);
-
-  const studies = useMemo(() => {
-    if (!fam) return [];
-    return (state.studies || []).filter(s => s.familyId === fam.id);
-  }, [fam, state.studies]);
 
   useEffect(() => {
     if (!selectedMemberId && members.length > 0) {
@@ -324,7 +359,18 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
     return members.find(m => m.id === selectedMemberId) || null;
   }, [selectedMemberId, members]);
 
-  const screening = activeMember ? (state.memberScreenings?.[activeMember.id] || {}) : {};
+  const attachmentsByStudy = useMemo(() => {
+    const map = new Map();
+    attachments.forEach((attachment) => {
+      if (!attachment.studyId) return;
+      const list = map.get(attachment.studyId) || [];
+      list.push(attachment);
+      map.set(attachment.studyId, list);
+    });
+    return map;
+  }, [attachments]);
+
+  const screening = activeMember ? getMemberScreening(activeMember.id) : {};
   const valueFor = (key) => screening[key] || { ordered: false, done: false, result: "" };
 
   const handleOrdered = (key, checked) => {
@@ -355,22 +401,62 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
     upsertMemberScreening(activeMember.id, key, { result: text });
   };
 
-  const handleCreateStudy = ({ tipo, resultado, file }) => {
+  const handleCreateStudy = async ({ tipo, resultado, file }) => {
     if (!fam || !selectedMemberId) return false;
     const today = new Date().toISOString().slice(0, 10);
-    const payload = {
-      familyId: fam.id,
+    const studyPayload = {
       memberId: selectedMemberId,
       tipo,
       nombre: file ? file.name : "",
       fecha: today,
-      resultado
+      resultado,
     };
-    if (file) {
-      payload.archivoUrl = URL.createObjectURL(file);
+    try {
+      const study = await createStudy(studyPayload);
+      if (file && study?.id) {
+        await createAttachment({
+          memberId: selectedMemberId,
+          studyId: study.id,
+          category: 'STUDY_RESULT',
+          description: resultado,
+          file,
+        });
+      }
+      return true;
+    } catch (error) {
+      console.error("No se pudo registrar el estudio", error);
+      return false;
     }
-    createStudy(payload);
-    return true;
+  };
+
+  const handleDeleteStudy = async (studyId) => {
+    const relatedAttachments = attachments.filter((attachment) => attachment.studyId === studyId);
+    try {
+      await deleteStudy(studyId);
+      await Promise.all(
+        relatedAttachments.map((attachment) => deleteAttachment(attachment.id)),
+      );
+    } catch (error) {
+      console.error("No se pudo eliminar el estudio", error);
+    }
+  };
+
+  const handleDownloadAttachment = async (attachment) => {
+    try {
+      const blob = await downloadAttachment(attachment.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = attachment.fileName || attachment.description || 'adjunto';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }, 0);
+    } catch (error) {
+      console.error("No se pudo descargar el adjunto", error);
+    }
   };
 
   if (!fam) {
@@ -444,24 +530,34 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
               {filteredStudies.length === 0 && (
                 <div className="text-sm text-slate-500">No hay estudios registrados para este miembro.</div>
               )}
-              {filteredStudies.map(s => {
-                const m = s.memberId ? members.find(x=>x.id === s.memberId) : null;
+              {filteredStudies.map((study) => {
+                const member = study.memberId ? members.find((item) => item.id === study.memberId) : null;
+                const studyAttachments = attachmentsByStudy.get(study.id) || [];
                 return (
-                  <div key={s.id} className="flex items-start justify-between px-3 py-2 rounded-xl border border-slate-200">
+                  <div key={study.id} className="flex items-start justify-between px-3 py-2 rounded-xl border border-slate-200">
                     <div className="text-sm">
-                      <div><b>{s.tipo}</b> · {s.nombre || "—"}</div>
+                      <div><b>{study.tipo}</b> · {study.nombre || "—"}</div>
                       <div className="text-slate-600">
-                        {fmtDate(s.fecha)} · {(m?.filiatorios?.iniciales || (m ? m.rol : "familia"))}
-                        {s.resultado ? ` · ${s.resultado}` : ""}
+                        {fmtDate(study.fecha)} · {(member?.filiatorios?.iniciales || (member ? member.rol : "familia"))}
+                        {study.resultado ? ` · ${study.resultado}` : ""}
                       </div>
-                      {s.archivoUrl && (
-                        <div className="text-xs">
-                          Archivo/URL: <a className="text-blue-600 underline" href={s.archivoUrl} target="_blank" rel="noreferrer">{s.archivoUrl}</a>
+                      {Boolean(studyAttachments.length) && (
+                        <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                          {studyAttachments.map((attachment) => (
+                            <button
+                              key={attachment.id}
+                              type="button"
+                              onClick={() => handleDownloadAttachment(attachment)}
+                              className="text-blue-600 underline text-left"
+                            >
+                              Descargar {attachment.fileName || attachment.description || 'adjunto'}
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
                     <button
-                      onClick={()=>deleteStudy(s.id)}
+                      onClick={() => handleDeleteStudy(study.id)}
                       className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-red-50"
                       title="Eliminar"
                     >

@@ -1,449 +1,32 @@
 
 import React, { useMemo, useState } from 'react';
 import { useCenagemStore } from '@/store/cenagemStore';
+import { GRUPOS_CONSULTA, getGroupIdFromDetail } from '@/lib/gruposConsulta';
 
-const GROUP_LABELS = {
-  di_rm: 'Deficit intelectual / retraso madurativo',
-  talla: 'Alteraciones de la talla',
-  dismorfias: 'Malformaciones congenitas y dismorfias',
-  prenatal: 'Hallazgos prenatales',
-  fertilidad: 'Problemas de fertilidad / asesoria preconcepcional',
-  onco: 'Cancer familiar o predisposicion oncologica',
-  otros: 'Otros motivos de consulta',
-  monogenica: 'Sospecha de enfermedad monogenica',
-};
+const GROUP_LABELS = GRUPOS_CONSULTA.reduce((acc, group) => {
+  const label = typeof group.label === 'string'
+    ? group.label.replace(/^[0-9]+\.\s*/, '').trim()
+    : group.label;
+  acc[group.id] = label || group.id;
+  return acc;
+}, {});
 
-const RAW_CASES = [
-  {
-    id: 'case-shox-array',
-    familyCode: 'FAM-0001',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0001-A1',
-    sex: 'F',
-    birthDate: '2020-07-02',
-    approxAge: 4.6,
-    groupId: 'talla',
-    groupLabel: 'Alteraciones de la talla',
-    subgroupId: 'baja_estatura',
-    studyType: 'Array-CGH',
-    studyName: 'Array-CGH 60K',
-    studyModality: 'Microarray',
-    resultClassification: 'Patogenico',
-    diagnosisStatus: 'Confirmado',
-    gene: 'SHOX',
-    variantType: 'Delecion heterocigota',
-    chromosomalRegion: 'Xp22.3',
-    hpoTerms: ['HP:0004322', 'HP:0000075'],
-    phenotypeSummary: 'Baja estatura proporcional con acortamiento mesomelico.',
-    diagnosisLabel: 'Displasia esqueletica por haploinsuficiencia de SHOX',
-    referralService: 'Hospital Garrahan - Endocrinologia',
-    requestingService: 'Hospital Garrahan',
-    lab: 'Laboratorio Central CENAGEM',
-    derivationAt: '2024-01-10',
-    requestAt: '2024-01-25',
-    resultAt: '2024-02-20',
-    resultSummary: 'Del( SHOX exones 4-6 ) ACMG Patogenico.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: ['poster'],
-    selectedForShowcase: true,
-    phenotypeCluster: 'Endocrino / talla',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-brca2-panel',
-    familyCode: 'FAM-0002',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0002-A1',
-    sex: 'M',
-    birthDate: '2015-12-19',
-    approxAge: 9.2,
-    groupId: 'onco',
-    groupLabel: 'Cancer familiar o predisposicion oncologica',
-    subgroupId: 'mama_ovario',
-    studyType: 'Panel NGS',
-    studyName: 'Panel predisposicion onco 84 genes',
-    studyModality: 'NGS',
-    resultClassification: 'Probablemente patogenico',
-    diagnosisStatus: 'Sospecha monogenica',
-    gene: 'BRCA2',
-    variantType: 'Missense',
-    chromosomalRegion: '13q13.1',
-    hpoTerms: ['HP:0003002', 'HP:0100242'],
-    phenotypeSummary: 'Historia familiar de cancer de mama y ovario.',
-    diagnosisLabel: 'Predisposicion hereditaria al cancer (BRCA2)',
-    referralService: 'Hospital Italiano - Oncologia',
-    requestingService: 'Hospital Italiano',
-    lab: 'CENAGEM - Oncogenetica',
-    derivationAt: '2024-03-05',
-    requestAt: '2024-03-28',
-    resultAt: '2024-04-20',
-    resultSummary: 'c.7007G>A (p.Arg2336His) ACMG LP.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: ['resumen'],
-    selectedForShowcase: true,
-    phenotypeCluster: 'Oncologia',
-    serviceType: 'Privado',
-  },
-  {
-    id: 'case-chek2-vus',
-    familyCode: 'FAM-0002',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0002-A1',
-    sex: 'M',
-    birthDate: '2015-12-19',
-    approxAge: 8.9,
-    groupId: 'onco',
-    groupLabel: 'Cancer familiar o predisposicion oncologica',
-    subgroupId: 'mama_ovario',
-    studyType: 'Panel NGS',
-    studyName: 'Panel predisposicion onco 84 genes',
-    studyModality: 'NGS',
-    resultClassification: 'VUS',
-    diagnosisStatus: 'Pendiente',
-    gene: 'CHEK2',
-    variantType: 'Missense',
-    chromosomalRegion: '22q12.1',
-    hpoTerms: ['HP:0003002'],
-    phenotypeSummary: 'Variante incierta detectada en screening.',
-    diagnosisLabel: 'Seguimiento por antecedente familiar de cancer',
-    referralService: 'Hospital Italiano - Oncologia',
-    requestingService: 'Hospital Italiano',
-    lab: 'CENAGEM - Oncogenetica',
-    derivationAt: '2023-08-12',
-    requestAt: '2023-08-25',
-    resultAt: '2023-09-18',
-    resultSummary: 'c.470T>C (p.Ile157Thr) clasificado como VUS.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: [],
-    selectedForShowcase: false,
-    phenotypeCluster: 'Oncologia',
-    serviceType: 'Privado',
-  },
-  {
-    id: 'case-fertilidad-cariotipo',
-    familyCode: 'FAM-0003',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0003-A1',
-    sex: 'F',
-    birthDate: '1993-08-21',
-    approxAge: 30.5,
-    groupId: 'fertilidad',
-    groupLabel: 'Problemas de fertilidad o asesoria preconcepcional',
-    subgroupId: 'infertilidad',
-    studyType: 'Cariotipo',
-    studyName: 'Cariotipo alta resolucion',
-    studyModality: 'Cariotipo',
-    resultClassification: 'Patogenico',
-    diagnosisStatus: 'Confirmado',
-    gene: 'X chromosome',
-    variantType: 'Monosomia X mosaico',
-    chromosomalRegion: 'Xp22',
-    hpoTerms: ['HP:0000798', 'HP:0000819'],
-    phenotypeSummary: 'Infertilidad primaria con amenorrea.',
-    diagnosisLabel: 'Mosaico Turner 45,X/46,XX',
-    referralService: 'Hospital Lagomaggiore - Fertilidad',
-    requestingService: 'Hospital Lagomaggiore',
-    lab: 'Laboratorio Central CENAGEM',
-    derivationAt: '2024-02-01',
-    requestAt: '2024-02-12',
-    resultAt: '2024-02-26',
-    resultSummary: 'Cariotipo 45,X[18]/46,XX[12].',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: ['reporte'],
-    selectedForShowcase: false,
-    phenotypeCluster: 'Reproductivo',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-scn2a-exome',
-    familyCode: 'FAM-0004',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0004-A1',
-    sex: 'M',
-    birthDate: '2019-10-10',
-    approxAge: 4.7,
-    groupId: 'di_rm',
-    groupLabel: 'Deficit intelectual o retraso madurativo',
-    subgroupId: 'tea',
-    studyType: 'Exoma',
-    studyName: 'Exoma clinico trio',
-    studyModality: 'NGS',
-    resultClassification: 'VUS',
-    diagnosisStatus: 'Pendiente',
-    gene: 'SCN2A',
-    variantType: 'Missense de novo',
-    chromosomalRegion: '2q24.3',
-    hpoTerms: ['HP:0001250', 'HP:0001337', 'HP:0001263'],
-    phenotypeSummary: 'Retraso global del desarrollo y crisis febriles.',
-    diagnosisLabel: 'Posible encefalopatia epileptica asociada a SCN2A',
-    referralService: 'Hospital de Ninos Cordoba - Neurologia',
-    requestingService: 'Hospital de Ninos Cordoba',
-    lab: 'CENAGEM - Genomica',
-    derivationAt: '2024-05-10',
-    requestAt: '2024-05-18',
-    resultAt: '2024-06-22',
-    resultSummary: 'c.4760G>A (p.Arg1587His) VUS.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: ['discusion'],
-    selectedForShowcase: false,
-    phenotypeCluster: 'Neurologia',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-nf1-panel',
-    familyCode: 'FAM-0005',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0005-A1',
-    sex: 'F',
-    birthDate: '1987-02-14',
-    approxAge: 37.0,
-    groupId: 'otros',
-    groupLabel: 'Otros motivos de consulta genetica',
-    subgroupId: 'dermato_inmuno',
-    studyType: 'Panel NGS',
-    studyName: 'Panel neurocutaneas 50 genes',
-    studyModality: 'NGS',
-    resultClassification: 'Patogenico',
-    diagnosisStatus: 'Confirmado',
-    gene: 'NF1',
-    variantType: 'Nonsense',
-    chromosomalRegion: '17q11.2',
-    hpoTerms: ['HP:0009726', 'HP:0009732'],
-    phenotypeSummary: 'Cafe au lait y neurofibromas multiples.',
-    diagnosisLabel: 'Neurofibromatosis tipo 1',
-    referralService: 'Hospital Provincial Rosario - Dermatologia',
-    requestingService: 'Hospital Provincial Rosario',
-    lab: 'CENAGEM - Genomica',
-    derivationAt: '2023-11-01',
-    requestAt: '2023-11-12',
-    resultAt: '2023-12-05',
-    resultSummary: 'c.6859C>T (p.Arg2287*) ACMG P.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: ['poster'],
-    selectedForShowcase: true,
-    phenotypeCluster: 'Dermatologia',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-nipt-neg',
-    familyCode: 'FAM-0006',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0006-A1',
-    sex: 'F',
-    birthDate: null,
-    approxAge: 0,
-    groupId: 'prenatal',
-    groupLabel: 'Hallazgos prenatales',
-    subgroupId: 'cribado_anormal',
-    studyType: 'NIPT',
-    studyName: 'ADN libre fetal',
-    studyModality: 'cfDNA',
-    resultClassification: 'Negativo',
-    diagnosisStatus: 'Pendiente',
-    gene: null,
-    variantType: 'Screening aneuploidias',
-    chromosomalRegion: null,
-    hpoTerms: ['HP:0001511'],
-    phenotypeSummary: 'Screening prenatal por translucencia aumentada.',
-    diagnosisLabel: 'Seguimiento prenatal',
-    referralService: 'Hospital Castro Rendon - Obstetricia',
-    requestingService: 'Hospital Castro Rendon',
-    lab: 'Laboratorio externo - NIPT',
-    derivationAt: '2024-05-02',
-    requestAt: '2024-05-04',
-    resultAt: '2024-05-07',
-    resultSummary: 'Sin evidencias de aneuploidias comunes.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: [],
-    selectedForShowcase: false,
-    phenotypeCluster: 'Prenatal',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-atp7b-exome',
-    familyCode: 'FAM-0007',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0007-A1',
-    sex: 'F',
-    birthDate: '2012-04-03',
-    approxAge: 12.9,
-    groupId: 'monogenica',
-    groupLabel: 'Sospecha de enfermedad monogenica',
-    subgroupId: 'fenotipo_especifico',
-    studyType: 'Exoma',
-    studyName: 'Exoma clinico trio',
-    studyModality: 'NGS',
-    resultClassification: 'Patogenico',
-    diagnosisStatus: 'Confirmado',
-    gene: 'ATP7B',
-    variantType: 'Compound heterozygous',
-    chromosomalRegion: '13q14.3',
-    hpoTerms: ['HP:0002900', 'HP:0000822', 'HP:0001123'],
-    phenotypeSummary: 'Enfermedad de Wilson con afectacion hepatica y neurologica.',
-    diagnosisLabel: 'Enfermedad de Wilson (ATP7B)',
-    referralService: 'Hospital Materno Infantil Salta - Hepatologia',
-    requestingService: 'Hospital Materno Infantil Salta',
-    lab: 'CENAGEM - Genomica',
-    derivationAt: '2024-06-15',
-    requestAt: '2024-06-28',
-    resultAt: '2024-07-25',
-    resultSummary: 'c.3207C>A y c.3904-2A>G sin reportes previos.',
-    novelVariant: true,
-    notInClinvar: true,
-    notInGnomad: true,
-    isRare: true,
-    rareFlagReason: 'Compound heterocigosis no reportada en bases publicas.',
-    publicationTags: ['paper', 'poster'],
-    selectedForShowcase: true,
-    phenotypeCluster: 'Metabolismo',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-ankrd11-genome',
-    familyCode: 'FAM-0008',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0008-A1',
-    sex: 'M',
-    birthDate: '2022-09-11',
-    approxAge: 2.4,
-    groupId: 'dismorfias',
-    groupLabel: 'Malformaciones congenitas y dismorfias',
-    subgroupId: 'multiples',
-    studyType: 'Genoma',
-    studyName: 'Genoma completo trio',
-    studyModality: 'NGS',
-    resultClassification: 'Patogenico',
-    diagnosisStatus: 'Confirmado',
-    gene: 'ANKRD11',
-    variantType: 'Frameshift',
-    chromosomalRegion: '16q24.3',
-    hpoTerms: ['HP:0001999', 'HP:0001513', 'HP:0000322'],
-    phenotypeSummary: 'Dismorfias faciales, hipotonia, retraso del desarrollo.',
-    diagnosisLabel: 'Sindrome de KBG',
-    referralService: 'Hospital Padilla - Genetica',
-    requestingService: 'Hospital Padilla',
-    lab: 'CENAGEM - Genomica',
-    derivationAt: '2024-02-20',
-    requestAt: '2024-03-01',
-    resultAt: '2024-04-02',
-    resultSummary: 'c.1900dup (p.Thr634Asnfs*21) patogenico.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: ['resumen'],
-    selectedForShowcase: true,
-    phenotypeCluster: 'Dismorfias',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-acan-panel',
-    familyCode: 'FAM-0009',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0009-A1',
-    sex: 'F',
-    birthDate: '2016-05-19',
-    approxAge: 8.5,
-    groupId: 'talla',
-    groupLabel: 'Alteraciones de la talla',
-    subgroupId: 'baja_estatura',
-    studyType: 'Panel NGS',
-    studyName: 'Panel talla baja 150 genes',
-    studyModality: 'NGS',
-    resultClassification: 'Probablemente patogenico',
-    diagnosisStatus: 'Sospecha monogenica',
-    gene: 'ACAN',
-    variantType: 'Missense',
-    chromosomalRegion: '15q26.1',
-    hpoTerms: ['HP:0004322', 'HP:0001513'],
-    phenotypeSummary: 'Talla baja desproporcionada con macrocefalia leve.',
-    diagnosisLabel: 'Sospecha displasia esqueletica ACAN',
-    referralService: 'Hospital Perrando - Endocrinologia',
-    requestingService: 'Hospital Perrando',
-    lab: 'CENAGEM - Genomica',
-    derivationAt: '2024-01-15',
-    requestAt: '2024-01-30',
-    resultAt: '2024-02-28',
-    resultSummary: 'c.5446C>T (p.Arg1816Trp) ACMG LP.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: true,
-    isRare: true,
-    rareFlagReason: 'Variante con muy baja frecuencia en poblacion local.',
-    publicationTags: ['poster'],
-    selectedForShowcase: false,
-    phenotypeCluster: 'Endocrino / talla',
-    serviceType: 'Publico',
-  },
-  {
-    id: 'case-mecp2-exome',
-    familyCode: 'FAM-0010',
-    memberInitials: 'A1',
-    patientCode: 'FAM-0010-A1',
-    sex: 'F',
-    birthDate: '2018-01-30',
-    approxAge: 6.9,
-    groupId: 'di_rm',
-    groupLabel: 'Deficit intelectual o retraso madurativo',
-    subgroupId: 'di_no_aclarada',
-    studyType: 'Exoma',
-    studyName: 'Exoma clinico',
-    studyModality: 'NGS',
-    resultClassification: 'Patogenico',
-    diagnosisStatus: 'Confirmado',
-    gene: 'MECP2',
-    variantType: 'Frameshift',
-    chromosomalRegion: 'Xq28',
-    hpoTerms: ['HP:0001250', 'HP:0002376', 'HP:0002167'],
-    phenotypeSummary: 'Perdida de habilidades motoras y movimientos estereotipados.',
-    diagnosisLabel: 'Sindrome de Rett',
-    referralService: 'Hospital Ramon Carrillo - Neurologia',
-    requestingService: 'Hospital Ramon Carrillo',
-    lab: 'CENAGEM - Genomica',
-    derivationAt: '2023-12-10',
-    requestAt: '2024-01-05',
-    resultAt: '2024-01-29',
-    resultSummary: 'c.806del (p.Pro269Leufs*5) patogenico.',
-    novelVariant: false,
-    notInClinvar: false,
-    notInGnomad: false,
-    isRare: false,
-    rareFlagReason: null,
-    publicationTags: ['paper'],
-    selectedForShowcase: true,
-    phenotypeCluster: 'Neurologia',
-    serviceType: 'Publico',
-  },
-];
+const DETAIL_LABELS = GRUPOS_CONSULTA.reduce((acc, group) => {
+  if (!Array.isArray(group.options)) return acc;
+  group.options.forEach((option) => {
+    if (option?.id && option?.label) {
+      acc[option.id] = option.label;
+    }
+  });
+  return acc;
+}, {});
+
+const KNOWN_GROUP_IDS = new Set(Object.keys(GROUP_LABELS));
+
+const GROUP_ID_BY_LABEL = Object.entries(GROUP_LABELS).reduce((acc, [id, label]) => {
+  acc[label.toLowerCase()] = id;
+  return acc;
+}, {});
 
 const MS_IN_DAY = 1000 * 60 * 60 * 24;
 const STATUS_PRIORITY = { Confirmado: 3, 'Sospecha monogenica': 2, Pendiente: 1 };
@@ -454,6 +37,460 @@ const CLASS_COLORS = {
   Negativo: '#475569',
   Pendiente: '#94a3b8',
 };
+
+function stripOrdinalLabel(label) {
+  if (typeof label !== 'string') return '';
+  return label.replace(/^[0-9]+\.\s*/, '').trim();
+}
+
+function pickFirstString(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+  return '';
+}
+
+function ensureArrayOfStrings(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[;|,]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function toDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.valueOf())) return null;
+  return date;
+}
+
+function normalizeDateString(value) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const parsed = toDate(trimmed);
+    return parsed ? parsed.toISOString().slice(0, 10) : null;
+  }
+  if (value instanceof Date) {
+    const parsed = toDate(value);
+    return parsed ? parsed.toISOString().slice(0, 10) : null;
+  }
+  return null;
+}
+
+function computeDaysBetween(from, to) {
+  const start = toDate(from);
+  const end = toDate(to);
+  if (!start || !end) return null;
+  const diff = Math.round((end.getTime() - start.getTime()) / MS_IN_DAY);
+  return Number.isFinite(diff) && diff >= 0 ? diff : null;
+}
+
+function resolveGroupIdForFamily(family) {
+  if (!family) return null;
+  const direct = family.motivo?.groupId;
+  if (direct && KNOWN_GROUP_IDS.has(direct)) {
+    return direct;
+  }
+  const detailId = family.motivo?.detailId || family.metadata?.motivoDetailId;
+  if (detailId) {
+    const fromDetail = typeof getGroupIdFromDetail === 'function' ? getGroupIdFromDetail(detailId) : null;
+    if (fromDetail) return fromDetail;
+  }
+  if (Array.isArray(family.tags)) {
+    const found = family.tags.find((tag) => KNOWN_GROUP_IDS.has(tag));
+    if (found) return found;
+  }
+  const label = stripOrdinalLabel(family.motivo?.groupLabel || family.metadata?.groupLabel || '');
+  if (label) {
+    const match = GROUP_ID_BY_LABEL[label.toLowerCase()];
+    if (match) return match;
+  }
+  return null;
+}
+
+function resolveGroupLabel(family, groupId) {
+  if (groupId && GROUP_LABELS[groupId]) return GROUP_LABELS[groupId];
+  const label = stripOrdinalLabel(family?.motivo?.groupLabel || family?.metadata?.groupLabel || '');
+  return label || (groupId || null);
+}
+
+function inferStudyModality(study) {
+  if (!study) return '';
+  return pickFirstString(
+    study.metadata?.modality,
+    study.metadata?.modalidad,
+    study.metadata?.platform,
+    study.tipo,
+  );
+}
+
+function normalizeClassification(value) {
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized.includes('pathog')) return 'Patogenico';
+  if (
+    normalized.includes('likely')
+    || normalized.includes('probable')
+    || normalized.includes('probablemente')
+    || normalized.includes('lp ')
+    || normalized.includes(' lp')
+  ) {
+    return 'Probablemente patogenico';
+  }
+  if (
+    normalized.includes('vus')
+    || normalized.includes('uncertain')
+    || normalized.includes('inciert')
+  ) {
+    return 'VUS';
+  }
+  if (
+    normalized.includes('negativ')
+    || normalized.includes('sin hallazgos')
+    || normalized.includes('normal')
+  ) {
+    return 'Negativo';
+  }
+  if (normalized.includes('benign')) return 'Benigno';
+  if (normalized.includes('pend')) return 'Pendiente';
+  return '';
+}
+
+function inferResultClassification(study) {
+  if (!study) return 'Pendiente';
+  const classification = normalizeClassification(pickFirstString(
+    study.metadata?.resultClassification,
+    study.metadata?.classification,
+    study.metadata?.classificacion,
+    study.metadata?.acmg,
+    study.metadata?.acmgClassification,
+    study.metadata?.clasificacion,
+  ));
+  if (classification) return classification;
+  const fromNotes = normalizeClassification(
+    pickFirstString(study.resultado, study.descripcion, study.notes),
+  );
+  if (fromNotes) return fromNotes;
+  return 'Pendiente';
+}
+
+function inferDiagnosisStatus(study, member) {
+  const rawStatus = pickFirstString(
+    study?.metadata?.diagnosisStatus,
+    study?.metadata?.diagnosis,
+    study?.estado,
+    study?.status,
+    member?.diagnostico,
+  );
+  if (!rawStatus) return 'Pendiente';
+  const normalized = rawStatus.trim().toLowerCase();
+  if (
+    normalized.includes('confirm')
+    || normalized.includes('posit')
+    || normalized.includes('complet')
+    || normalized.includes('patog')
+  ) {
+    return 'Confirmado';
+  }
+  if (
+    normalized.includes('suspect')
+    || normalized.includes('sospe')
+    || normalized.includes('likely')
+    || normalized.includes('anal')
+    || normalized.includes('revision')
+  ) {
+    return 'Sospecha monogenica';
+  }
+  if (normalized.includes('pend')) return 'Pendiente';
+  return 'Pendiente';
+}
+
+function inferGeneFromStudy(study) {
+  if (!study?.metadata) return '';
+  const gene = pickFirstString(
+    study.metadata.gene,
+    study.metadata.geneSymbol,
+    study.metadata.gen,
+  );
+  if (gene) return gene;
+  if (Array.isArray(study.metadata.genes)) {
+    const found = study.metadata.genes
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .find(Boolean);
+    if (found) return found;
+  }
+  const result = pickFirstString(study.resultado, study.descripcion);
+  if (result) {
+    const match = result.match(/\b[A-Z0-9]{3,}\b/);
+    if (match) return match[0];
+  }
+  return '';
+}
+
+function inferVariantType(study) {
+  if (!study?.metadata) return '';
+  const variant = pickFirstString(
+    study.metadata.variantType,
+    study.metadata.variant,
+    study.metadata.variantClassification,
+  );
+  if (variant) return variant;
+  const summary = pickFirstString(study.resultado, study.descripcion);
+  if (summary) {
+    const match = summary.match(/\b(dup(?:lication)?|del(?:etion)?|missense|nonsense|frameshift|cnv|indel)\b/i);
+    if (match) return match[0];
+  }
+  return '';
+}
+
+function inferChromosomalRegion(study) {
+  if (!study?.metadata) return '';
+  return pickFirstString(
+    study.metadata.chromosomalRegion,
+    study.metadata.region,
+    study.metadata.locus,
+    study.metadata.citogenetica,
+  );
+}
+
+function inferPhenotypeSummary(family, member, study) {
+  return pickFirstString(
+    study?.metadata?.phenotypeSummary,
+    member?.resumen,
+    family?.motivoPaciente,
+    family?.motivoNarrativa,
+  );
+}
+
+function inferDiagnosisLabel(family, member, study) {
+  const label = pickFirstString(
+    study?.metadata?.diagnosisLabel,
+    member?.diagnostico,
+    stripOrdinalLabel(family?.motivo?.detailLabel || DETAIL_LABELS[family?.motivo?.detailId] || ''),
+    stripOrdinalLabel(family?.motivo?.groupLabel),
+  );
+  return label || '';
+}
+
+function inferReferralService(family, study) {
+  return pickFirstString(
+    study?.metadata?.referralService,
+    family?.metadata?.referralService,
+    family?.motivoDerivacion,
+  );
+}
+
+function inferRequestingService(family, study) {
+  return pickFirstString(
+    study?.metadata?.requestingService,
+    study?.metadata?.service,
+    family?.metadata?.requestingService,
+    family?.metadata?.institucionDerivacion,
+    family?.motivoDerivacion,
+  );
+}
+
+function inferLab(study) {
+  if (!study?.metadata) return '';
+  return pickFirstString(
+    study.metadata.lab,
+    study.metadata.labName,
+    study.metadata.laboratory,
+    study.metadata.laboratorio,
+  );
+}
+
+function inferPhenotypeCluster(groupId, family, study) {
+  const cluster = pickFirstString(
+    study?.metadata?.phenotypeCluster,
+    family?.metadata?.phenotypeCluster,
+  );
+  if (cluster) return cluster;
+  if (groupId && GROUP_LABELS[groupId]) return GROUP_LABELS[groupId];
+  return 'Sin clasificar';
+}
+
+function inferServiceType(family, study, requestingService) {
+  const value = pickFirstString(
+    study?.metadata?.serviceType,
+    family?.metadata?.serviceType,
+    family?.metadata?.sector,
+  );
+  if (value) return value;
+  const text = (requestingService || '').toLowerCase();
+  if (!text) return 'Sin dato';
+  if (
+    text.includes('hospital')
+    || text.includes('ministerio')
+    || text.includes('publico')
+    || text.includes('público')
+  ) {
+    return 'Publico';
+  }
+  if (
+    text.includes('clinica')
+    || text.includes('sanatorio')
+    || text.includes('privado')
+  ) {
+    return 'Privado';
+  }
+  return 'Sin dato';
+}
+
+function inferIsRare(study, member) {
+  if (study?.metadata?.isRare !== undefined) return Boolean(study.metadata.isRare);
+  if (study?.metadata?.rareFlag !== undefined) return Boolean(study.metadata.rareFlag);
+  if (study?.metadata?.rareFlagReason) return true;
+  if (member?.metadata?.isRare !== undefined) return Boolean(member.metadata.isRare);
+  if (member?.metadata?.rareFlagReason) return true;
+  return false;
+}
+
+function inferRareReason(study, member) {
+  const value = pickFirstString(
+    study?.metadata?.rareFlagReason,
+    study?.metadata?.rareReason,
+    member?.metadata?.rareFlagReason,
+    member?.metadata?.rareReason,
+  );
+  return value || null;
+}
+
+function inferYear(...dates) {
+  for (const value of dates) {
+    const parsed = toDate(value);
+    if (parsed) return parsed.getFullYear();
+  }
+  return null;
+}
+
+function inferMonth(...dates) {
+  for (const value of dates) {
+    const parsed = toDate(value);
+    if (parsed) {
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+    }
+  }
+  return null;
+}
+
+function pickProband(members = []) {
+  if (!Array.isArray(members) || members.length === 0) return null;
+  const byRole = members.find((member) => (member.rol || '').toLowerCase() === 'proband');
+  if (byRole) return byRole;
+  const byInitials = members.find((member) => (member.filiatorios?.iniciales || '').toUpperCase() === 'A1');
+  if (byInitials) return byInitials;
+  return members[0];
+}
+
+function composeCase({ family, member, study }) {
+  if (!family && !member && !study) return null;
+  const groupId = resolveGroupIdForFamily(family);
+  const groupLabel = resolveGroupLabel(family, groupId);
+  const subgroupId = family?.motivo?.detailId || null;
+  const subgroupLabel = subgroupId
+    ? stripOrdinalLabel(family?.motivo?.detailLabel || DETAIL_LABELS[subgroupId] || '')
+    : '';
+  const requestingService = inferRequestingService(family, study);
+  const derivationAt = normalizeDateString(
+    study?.metadata?.derivationAt
+      || family?.intake?.administrativo?.derivacionFecha
+      || family?.metadata?.derivationAt
+      || family?.createdAt
+  );
+  const requestAt = normalizeDateString(study?.fecha);
+  const resultAt = normalizeDateString(study?.resultadoFecha);
+  const referenceDate = resultAt || requestAt || derivationAt || null;
+  const birthDate = member?.nacimiento || null;
+  const ageAtConsult = calculateAgeYears(birthDate, referenceDate, null);
+  const ageGroup = inferAgeGroup(ageAtConsult);
+  const cohortYear = inferYear(requestAt, resultAt, derivationAt);
+  const cohortMonth = inferMonth(requestAt, resultAt, derivationAt);
+  const patientKey = [
+    family?.id || 'family',
+    member?.id || 'member',
+  ].join('|');
+
+  const caseExportIdSource = [
+    study?.id || family?.id || member?.id || patientKey,
+    study?.tipo || 'sin-estudio',
+    resultAt || requestAt || derivationAt || '',
+  ].join('|');
+
+  return {
+    id: study?.id || `family-${family?.id || member?.id || hashString(patientKey)}`,
+    familyId: family?.id || null,
+    memberId: member?.id || null,
+    familyCode: family?.code || '',
+    memberInitials: member?.filiatorios?.iniciales || member?.rol || 'FAM',
+    patientCode: family?.code
+      ? `${family.code}-${member?.filiatorios?.iniciales || member?.rol || 'FAM'}`
+      : '',
+    sex: member?.sexo || 'Sin dato',
+    birthDate,
+    approxAge: Number.isFinite(ageAtConsult) ? ageAtConsult : null,
+    groupId,
+    groupLabel,
+    subgroupId,
+    subgroupLabel: subgroupLabel || null,
+    studyType: study ? (study.tipo || 'Sin estudio') : 'Sin estudio',
+    studyName: study?.nombre || '',
+    studyModality: inferStudyModality(study),
+    resultClassification: study ? inferResultClassification(study) : 'Pendiente',
+    diagnosisStatus: inferDiagnosisStatus(study, member),
+    gene: inferGeneFromStudy(study),
+    variantType: inferVariantType(study),
+    chromosomalRegion: inferChromosomalRegion(study),
+    hpoTerms: ensureArrayOfStrings(member?.metadata?.hpoTerms),
+    phenotypeSummary: inferPhenotypeSummary(family, member, study),
+    diagnosisLabel: inferDiagnosisLabel(family, member, study),
+    referralService: inferReferralService(family, study),
+    requestingService,
+    lab: inferLab(study),
+    derivationAt,
+    requestAt,
+    resultAt,
+    resultSummary: study?.resultado || '',
+    novelVariant: Boolean(study?.metadata?.novelVariant),
+    notInClinvar: Boolean(study?.metadata?.notInClinvar),
+    notInGnomad: Boolean(study?.metadata?.notInGnomad),
+    isRare: inferIsRare(study, member),
+    rareFlagReason: inferRareReason(study, member),
+    publicationTags: ensureArrayOfStrings(
+      study?.metadata?.publicationTags || study?.metadata?.publications,
+    ),
+    selectedForShowcase: Boolean(study?.metadata?.selectedForShowcase || study?.metadata?.highlight),
+    phenotypeCluster: inferPhenotypeCluster(groupId, family, study),
+    serviceType: inferServiceType(family, study, requestingService),
+    ageAtConsult,
+    ageGroup,
+    cohortYear,
+    cohortMonth,
+    turnaroundRequest: computeDaysBetween(derivationAt, requestAt),
+    turnaroundResult: computeDaysBetween(requestAt, resultAt),
+    turnaroundTotal: computeDaysBetween(derivationAt, resultAt),
+    anonPatientId: `PT-${hashString(patientKey)}`,
+    caseExportId: `CS-${hashString(caseExportIdSource)}`,
+    patientKey,
+    provincia: family?.provincia || 'Sin dato',
+  };
+}
 
 function hashString(input) {
   let hash = 0;
@@ -497,89 +534,77 @@ function normaliseText(value) {
 function buildAnalyticsCases(state = {}) {
   const families = Array.isArray(state.families) ? state.families : [];
   const members = Array.isArray(state.members) ? state.members : [];
-  const familiesByCode = new Map();
-  for (const family of families) {
-    if (family?.code) {
-      familiesByCode.set(String(family.code).toUpperCase(), family);
+  const studies = Array.isArray(state.studies) ? state.studies : [];
+
+  const familiesById = new Map();
+  families.forEach((family) => {
+    if (family?.id) {
+      familiesById.set(family.id, family);
     }
-  }
-  const memberByFamilyAndInitials = new Map();
-  for (const member of members) {
-    if (!member?.familyId) continue;
-    const initials = (member.filiatorios?.iniciales || member.rol || '').toUpperCase();
-    const key = `${member.familyId}|${initials}`;
-    if (!memberByFamilyAndInitials.has(key)) {
-      memberByFamilyAndInitials.set(key, member);
-    }
-  }
-
-  return RAW_CASES.map((item) => {
-    const family = item.familyCode ? familiesByCode.get(item.familyCode.toUpperCase()) : null;
-    const familyId = family?.id || null;
-    const memberKey = familyId && item.memberInitials
-      ? `${familyId}|${item.memberInitials.toUpperCase()}`
-      : null;
-    const member = memberKey ? memberByFamilyAndInitials.get(memberKey) : null;
-
-    const birthDate = item.birthDate || member?.nacimiento || null;
-    const requestAt = item.requestAt || item.resultAt || null;
-    const resultAt = item.resultAt || item.requestAt || null;
-    const derivationAt = item.derivationAt || null;
-
-    const requestDate = requestAt ? new Date(requestAt) : null;
-    const resultDate = resultAt ? new Date(resultAt) : null;
-    const derivationDate = derivationAt ? new Date(derivationAt) : null;
-
-    const ageAtConsult = calculateAgeYears(birthDate, requestAt, item.approxAge);
-    const ageGroup = inferAgeGroup(ageAtConsult);
-
-    const cohortYear = requestDate?.getFullYear()
-      ?? resultDate?.getFullYear()
-      ?? null;
-
-    const cohortMonth = requestDate
-      ? `${requestDate.getFullYear()}-${String(requestDate.getMonth() + 1).padStart(2, '0')}`
-      : (resultDate
-        ? `${resultDate.getFullYear()}-${String(resultDate.getMonth() + 1).padStart(2, '0')}`
-        : null);
-
-    const turnaroundRequest = (requestDate && derivationDate)
-      ? Math.max(0, Math.round((requestDate.getTime() - derivationDate.getTime()) / MS_IN_DAY))
-      : null;
-
-    const turnaroundResult = (resultDate && requestDate)
-      ? Math.max(0, Math.round((resultDate.getTime() - requestDate.getTime()) / MS_IN_DAY))
-      : null;
-
-    const turnaroundTotal = (resultDate && derivationDate)
-      ? Math.max(0, Math.round((resultDate.getTime() - derivationDate.getTime()) / MS_IN_DAY))
-      : null;
-
-    const patientKey = item.patientCode
-      || (family?.code ? `${family.code}-${item.memberInitials || 'PX'}` : `${item.familyCode || 'EXT'}-${item.memberInitials || 'PX'}`);
-
-    const anonPatientId = `PT-${hashString(patientKey)}`;
-    const caseExportId = `CS-${hashString(`${item.id}|${item.studyType}|${item.resultAt || ''}`)}`;
-
-    return {
-      ...item,
-      familyId,
-      memberId: member?.id || null,
-      birthDate,
-      ageAtConsult,
-      ageGroup,
-      cohortYear,
-      cohortMonth,
-      turnaroundRequest,
-      turnaroundResult,
-      turnaroundTotal,
-      anonPatientId,
-      caseExportId,
-      patientKey,
-      sex: item.sex || member?.sexo || 'Sin dato',
-      provincia: family?.provincia || item.provincia || 'Sin dato',
-    };
   });
+
+  const membersById = new Map();
+  const membersByFamily = new Map();
+  members.forEach((member) => {
+    if (!member?.id) return;
+    membersById.set(member.id, member);
+    if (member.familyId) {
+      if (!membersByFamily.has(member.familyId)) {
+        membersByFamily.set(member.familyId, []);
+      }
+      membersByFamily.get(member.familyId).push(member);
+    }
+  });
+
+  const studiesByFamily = new Map();
+  studies.forEach((study) => {
+    if (!study?.familyId) return;
+    if (!studiesByFamily.has(study.familyId)) {
+      studiesByFamily.set(study.familyId, []);
+    }
+    studiesByFamily.get(study.familyId).push(study);
+  });
+
+  const familyIds = new Set();
+  families.forEach((family) => {
+    if (family?.id) {
+      familyIds.add(family.id);
+    }
+  });
+  studies.forEach((study) => {
+    if (study?.familyId) {
+      familyIds.add(study.familyId);
+    }
+  });
+
+  const cases = [];
+
+  familyIds.forEach((familyId) => {
+    const family = familiesById.get(familyId) || null;
+    const familyMembers = membersByFamily.get(familyId) || [];
+    const proband = pickProband(familyMembers);
+    const fallbackMember = proband || familyMembers[0] || null;
+    const familyStudies = studiesByFamily.get(familyId) || [];
+
+    if (familyStudies.length) {
+      familyStudies.forEach((study) => {
+        const member = (study.memberId && membersById.get(study.memberId)) || fallbackMember;
+        const caseEntry = composeCase({ family, member, study });
+        if (caseEntry) cases.push(caseEntry);
+      });
+    } else if (family || fallbackMember) {
+      const caseEntry = composeCase({ family, member: fallbackMember, study: null });
+      if (caseEntry) cases.push(caseEntry);
+    }
+  });
+
+  cases.sort((a, b) => {
+    const dateA = toDate(a.resultAt || a.requestAt || a.derivationAt)?.getTime() || 0;
+    const dateB = toDate(b.resultAt || b.requestAt || b.derivationAt)?.getTime() || 0;
+    return dateB - dateA;
+  });
+
+  return cases;
 }
 function summarisePatients(cases) {
   const map = new Map();
@@ -1713,3 +1738,4 @@ export default function AnalyticsPage({ onBack, currentUser }) {
     </div>
   );
 }
+

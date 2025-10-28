@@ -1,10 +1,13 @@
-﻿import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { GRUPOS_CONSULTA, postprocessSecciones, getGroupIdFromDetail } from '@/lib/gruposConsulta';
 import StepAdministrativo from './StepAdministrativo';
 import StepMotivo from './StepMotivo';
 import StepPaciente from './StepPaciente';
+import { getPacienteStepAvailability } from './pacienteStepLayout';
 import StepGrupoEspecifico from './StepGrupoEspecifico';
-import StepResumen from './StepResumen';
+import StepEstudiosComplementarios from './StepEstudiosComplementarios';
+import StepPrimeraEvolucion from './StepPrimeraEvolucion';
+import { useCaseWizardState } from './useCaseWizardState';
 
 const calculateAgeYears = (iso) => {
   if (!iso) return null;
@@ -17,70 +20,22 @@ const calculateAgeYears = (iso) => {
   return y < 0 ? 0 : y;
 };
 
-const emptyForm = {
-  pacienteNombre: '', pacienteApellido: '', pacienteDni: '',
-  pacienteNacimiento: '', pacienteDireccion: '',
-  motivoGroup: '', motivoDetail: '', motivoPaciente: '', motivoDerivacion: '',
-  consultaFecha: '',
-  pacienteEscolaridad: '', pacienteEscolaridadRendimiento: '',
-  pacienteAcompanante: '', pacienteAcompananteParentesco: '',
-  contactoTelefono1: '',
-  contactoTelefono2: '',
-  pacienteObraSocial: '', pacienteObraSocialNumero: '',
-  tutorPadreNombre: '', tutorPadreApellido: '', tutorPadreProcedencia: '', tutorPadreConsanguinidad: '',
-  tutorPadrePadreApellido: '', tutorPadrePadreProcedencia: '', tutorPadreMadreApellido: '', tutorPadreMadreProcedencia: '',
-  tutorMadreNombre: '', tutorMadreApellido: '', tutorMadreProcedencia: '', tutorMadreConsanguinidad: '',
-  tutorMadrePadreApellido: '', tutorMadrePadreProcedencia: '', tutorMadreMadreApellido: '', tutorMadreMadreProcedencia: '',
-  agNumber: '', provincia: '', medicoAsignado: '',
-  pacienteSexo: '', pacienteEmail: '', pacienteTelefono: '',
-  pacienteProfesion: '', pacienteAntecedentes: '',
-  antecedentesNeurologicos: '', antecedentesMetabolicos: '', antecedentesSensoriales: '', antecedentesPsicosociales: '',
-  pacienteExamenPeso: '', pacienteExamenTalla: '', pacienteExamenPc: '',
-  pacienteExamenPesoPercentil: '', pacienteExamenTallaPercentil: '', pacienteExamenPcPercentil: '',
-  pacienteExamenProporciones: '',
-  pacienteExamenObservaciones: '', pacienteExamenDismorfias: '', pacienteExamenOjos: '',
-  pacienteExamenNariz: '', pacienteExamenFiltrum: '', pacienteExamenBoca: '',
-  pacienteExamenOrejas: '', pacienteExamenCuello: '', pacienteExamenTorax: '',
-  pacienteExamenColumna: '', pacienteExamenAbdomen: '', pacienteExamenGenitales: '',
-  pacienteExamenMalformaciones: '', pacienteExamenPiel: '', pacienteExamenNeurologico: '', pacienteExamenOtras: '',
-  edadMaternaConcepcion: '', edadPaternaConcepcion: '',
-  controlPrenatal: '', controlPrenatalDetalle: '',
-  embarazoComplicaciones: '', embarazoExposiciones: '',
-  prenatalEcoAlteraciones: '',
-  perinatalTipoParto: '', perinatalEdadGestacional: '', perinatalPesoNacimiento: '',
-  perinatalTallaNacimiento: '', perinatalApgar1: '', perinatalApgar5: '', perinatalInternacionNeonatal: '', perinatalComplicaciones: '',
-  prenatalSemanas: '', prenatalEcografia: '', prenatalCribado: '', prenatalRciu: '',
-  prenatalInvasivos: '', prenatalGeneticaFetal: '', prenatalConsejeria: '', prenatalNotas: '',
-  prenatalProcedimientos: '',
-  ndHitosMotores: '', ndLenguaje: '', ndConducta: '', ndRegresion: '',
-  ndAreaCognitiva: '', ndEscolaridadDetalle: '',
-  ndEEG: '', ndRMN: '', ndEstudiosOtros: '', ndInterconsultas: '', ndApoyos: '',
-  comportamientoInteraccion: '', comportamientoAdaptativas: '', comportamientoEscalas: '', comportamientoApoyo: '',
-  reproTiempoBusqueda: '', reproFemeninoDatos: '', reproMasculinoDatos: '', reproPerdidasGestacionales: '',
-  reproDiagnosticos: '', reproTratamientos: '', reproEstudiosPrevios: '', reproPlan: '',
-  oncoTiposTumor: '', oncoEdadDiagnostico: '', oncoTratamientos: '', oncoEstudiosPrevios: '',
-  oncoArbolFamiliar: '', oncoRiesgoModelos: '', oncoEstudiosDisponibles: '', oncoPlanSeguimiento: '',
-  metaSintomasAgudos: '', metaCribadoNeonatal: '', metaBioquimica: '',
-  consanguinidad: 'no', consanguinidadDetalle: '',
-  familiaAntecedentesNeuro: '', familiaAbortosInfertilidad: '', familiaDesarrolloHermanos: '', familiaDiagnosticosGeneticos: '',
-  obstetricosDescripcion: '',
-  tallaEdadInicio: '', tallaFamiliaAdultos: '', tallaEstudiosPrevios: '', tallaTratamientos: '',
-  dismorfiasDescripcion: '', dismorfiasSistemasAfectados: '', dismorfiasImagenes: '', dismorfiasEstudiosGeneticos: '',
-  incTipoEstudio: '', incHallazgo: '', incAccionRequerida: '',
-  otrosMotivo: '', otrosEstudios: '', otrosPlan: '',
-  monoFenotipo: '', monoBioquimica: '', monoOrganoSistema: '', monoEstudiosPrevios: '', monoTratamiento: '',
-  monoPlanEstudios: '', monoNotas: '',
-  estudiosPrimerNivel: '', estudiosSegundoNivel: '', estudiosTercerNivel: '', estudiosComplementariosNotas: '',
-  sintesisClasificacion: '', sintesisSindromico: '', sintesisReversibilidad: '', sintesisEtiologia: '',
-  planDerivaciones: '', planConsejeriaGenetica: '', planControles: '', planRegistroHpo: '',
-  resumenPrimeraConsulta: '',
-  b1Nombre: '', b1Apellido: '', b1Nacimiento: '', b1Email: '', b1Profesion: '', b1ObraSocial: '', b1Antecedentes: '',
-  c1Nombre: '', c1Apellido: '', c1Nacimiento: '', c1Email: '', c1Profesion: '', c1ObraSocial: '', c1Antecedentes: '',
-  c1Gestas: '', c1Partos: '', c1Abortos: '', c1Cesareas: '',
-  abueloPaternoApellido: '', abueloPaternoProcedencia: '',
-  abuelaPaternaApellido: '', abuelaPaternaProcedencia: '',
-  abueloMaternoApellido: '', abueloMaternoProcedencia: '',
-  abuelaMaternaApellido: '', abuelaMaternaProcedencia: '',
+const getAutosaveMessage = (state) => {
+  if (!state) return null;
+  if (state.status === 'saving') return 'Guardando cambios…';
+  if (state.status === 'error') return 'No se pudo guardar automáticamente';
+  if (state.status === 'saved' && state.lastSavedAt) {
+    const time = new Date(state.lastSavedAt);
+    return `Guardado automático ${time.toLocaleTimeString()}`;
+  }
+  return null;
+};
+
+const getTodayDateValue = () => {
+  const now = new Date();
+  const offsetMinutes = now.getTimezoneOffset();
+  const local = new Date(now.getTime() - offsetMinutes * 60000);
+  return local.toISOString().slice(0, 10);
 };
 
 export default function NewCaseWizard({
@@ -92,105 +47,243 @@ export default function NewCaseWizard({
   initialStep = 1,
   showAdministrativeStep = true,
 }) {
-  const mergedInitial = useMemo(() => ({ ...emptyForm, ...initialData }), [initialData]);
-  const startStep = showAdministrativeStep ? initialStep : Math.max(2, initialStep);
-  const [form, setForm] = useState(mergedInitial);
-  const [step, setStep] = useState(startStep); // 1..5
+  const autosaveKey = useMemo(
+    () => (currentUser?.id ? `cenagem:newcase:${currentUser.id}` : 'cenagem:newcase'),
+    [currentUser?.id],
+  );
 
-  useEffect(() => {
-    setForm(mergedInitial);
-    setStep(startStep);
-  }, [mergedInitial, startStep]);
+  const {
+    flat,
+    updateField,
+    updateMany,
+    autosaveState,
+    clearAutosave,
+    validateStep,
+  } = useCaseWizardState({ initialData, storageKey: autosaveKey });
 
-  useEffect(() => {
-    if (currentUser?.name) {
-      setForm((prev) => ({ ...prev, medicoAsignado: prev.medicoAsignado || currentUser.name }));
-    }
-  }, [currentUser]);
+const totalSteps = showAdministrativeStep ? 9 : 8;
+  const normalizeInitialStep = showAdministrativeStep ? initialStep : Math.max(1, initialStep - 1);
+const startStep = Math.max(1, Math.min(totalSteps, normalizeInitialStep));
+const [step, setStep] = useState(startStep);
+const [stepErrors, setStepErrors] = useState({});
 
-  const edad = useMemo(() => calculateAgeYears(form.pacienteNacimiento), [form.pacienteNacimiento]);
+useEffect(() => {
+  setStep(startStep);
+}, [startStep]);
+
+useEffect(() => {
+  if (currentUser?.name && !flat.medicoAsignado) {
+    updateField('medicoAsignado', currentUser.name);
+  }
+}, [currentUser, flat.medicoAsignado, updateField]);
+
+useEffect(() => {
+  if (!flat.consultaFecha) {
+    updateField('consultaFecha', getTodayDateValue());
+  }
+}, [flat.consultaFecha, updateField]);
+
+  const edad = useMemo(() => calculateAgeYears(flat.pacienteNacimiento), [flat.pacienteNacimiento]);
 
   const resolvedGroupId = useMemo(() => {
-    if (form.motivoDetail) {
-      const fromDetail = getGroupIdFromDetail(form.motivoDetail);
+    if (flat.motivoDetail) {
+      const fromDetail = getGroupIdFromDetail(flat.motivoDetail);
       if (fromDetail) return fromDetail;
     }
-    return form.motivoGroup;
-  }, [form.motivoDetail, form.motivoGroup]);
+    return flat.motivoGroup;
+  }, [flat.motivoDetail, flat.motivoGroup]);
 
   useEffect(() => {
     if (!resolvedGroupId) return;
-    if (resolvedGroupId === form.motivoGroup) return;
-    setForm((prev) => {
-      if (prev.motivoGroup === resolvedGroupId) return prev;
-      return { ...prev, motivoGroup: resolvedGroupId };
-    });
-  }, [resolvedGroupId, form.motivoGroup]);
+    if (resolvedGroupId === flat.motivoGroup) return;
+    updateField('motivoGroup', resolvedGroupId);
+  }, [resolvedGroupId, flat.motivoGroup, updateField]);
 
   const secciones = useMemo(() => {
     if (!resolvedGroupId) return ['id', 'motivo', 'paciente'];
     return postprocessSecciones({ groupId: resolvedGroupId, edad });
   }, [resolvedGroupId, edad]);
 
-  const canNextFromStep1 = Boolean(
-    form.pacienteNombre && form.pacienteApellido && form.pacienteDni &&
-    form.pacienteNacimiento && form.motivoGroup &&
-    form.contactoTelefono1 &&
-    form.pacienteDireccion && form.pacienteObraSocial
-  );
-  const canNextFromStep2 = Boolean(form.motivoGroup && form.motivoDetail);
-  const canNextFromStep3 = Boolean(
-    form.agNumber && form.provincia &&
-    form.pacienteNombre && form.pacienteApellido &&
-    form.pacienteNacimiento && form.pacienteSexo && form.medicoAsignado
+  const pacienteAvailability = useMemo(
+    () => getPacienteStepAvailability(Array.isArray(secciones) ? secciones : []),
+    [secciones],
   );
 
-  const handleChange = (field, value) => setForm((p) => ({ ...p, [field]: value }));
+  const context = useMemo(
+    () => ({ showAdministrativeStep, groupId: resolvedGroupId }),
+    [showAdministrativeStep, resolvedGroupId],
+  );
 
-  const handleFinalSubmit = () => {
-    if (form.motivoGroup === 'prenatal') {
-      if (!form.prenatalSemanas || (!form.prenatalEcografia && !form.prenatalCribado)) return;
+  const clinicalSteps = useMemo(
+    () => ([
+      { id: 'motivo', label: 'Motivo de consulta', enabled: true },
+      { id: 'antecedentes', label: 'Antecedentes', enabled: pacienteAvailability.antecedentes },
+      { id: 'historia', label: 'Enfermedad actual', enabled: true },
+      { id: 'preguntas', label: 'Preguntas específicas', enabled: true },
+      { id: 'examen', label: 'Examen físico', enabled: pacienteAvailability.examen },
+      { id: 'estudios', label: 'Estudios complementarios', enabled: true },
+      { id: 'primera', label: 'Primera evolución', enabled: true },
+      { id: 'identificacion', label: 'Datos identificatorios', enabled: pacienteAvailability.identificacion !== false },
+    ]),
+    [pacienteAvailability],
+  );
+
+  const steps = useMemo(
+    () => (showAdministrativeStep
+      ? [{ id: 'administrativo', label: 'Administrativo', enabled: true }, ...clinicalSteps]
+      : clinicalSteps),
+    [showAdministrativeStep, clinicalSteps],
+  );
+
+  const maxStep = steps.length;
+  const minStep = 1;
+  const validationMap = useMemo(() => ({
+    administrativo: 1,
+    motivo: 2,
+    antecedentes: 3,
+    preguntas: 4,
+    identificacion: 5,
+  }), []);
+  const validationStepIndexes = useMemo(
+    () => steps
+      .map((stepDef, index) => ({ index: index + 1, validator: validationMap[stepDef.id] || null }))
+      .filter((entry) => entry.validator)
+      .map((entry) => entry.index),
+    [steps, validationMap],
+  );
+
+  useEffect(() => {
+    setStep((prev) => {
+      if (prev < 1) return 1;
+      if (prev > steps.length) return steps.length;
+      return prev;
+    });
+  }, [steps.length]);
+
+  const getValidationStepNumber = useCallback((stepIndex) => {
+    const stepDef = steps[stepIndex - 1];
+    if (!stepDef) return null;
+    return validationMap[stepDef.id] || null;
+  }, [steps, validationMap]);
+
+  const currentValidation = useMemo(() => {
+    const validatorNumber = getValidationStepNumber(step);
+    if (!validatorNumber) {
+      return { valid: true, errors: {} };
     }
-    if (form.motivoGroup === 'fertilidad') {
-      if (!form.reproTiempoBusqueda && !form.reproPerdidasGestacionales) return;
+    return validateStep(validatorNumber, context);
+  }, [validateStep, context, getValidationStepNumber, step]);
+
+  useEffect(() => {
+    if (!stepErrors[step]) return;
+    const validation = validateStep(step, context);
+    if (validation.valid) {
+      setStepErrors((prev) => {
+        if (!prev[step]) return prev;
+        const next = { ...prev };
+        delete next[step];
+        return next;
+      });
     }
-    if (form.motivoGroup === 'onco') {
-      if (!form.oncoTiposTumor && !form.oncoEstudiosPrevios) return;
+  }, [flat, step, validateStep, context, stepErrors]);
+
+  const ensureStepValid = useCallback(
+    (targetStep) => {
+      const validatorNumber = getValidationStepNumber(targetStep);
+      if (!validatorNumber) {
+        setStepErrors((prev) => {
+          if (!prev[targetStep]) return prev;
+          const next = { ...prev };
+          delete next[targetStep];
+          return next;
+        });
+        return true;
+      }
+      const validation = validateStep(validatorNumber, context);
+      if (!validation.valid) {
+        setStepErrors((prev) => ({ ...prev, [targetStep]: validation.errors }));
+        return false;
+      }
+      setStepErrors((prev) => {
+        if (!prev[targetStep]) return prev;
+        const next = { ...prev };
+        delete next[targetStep];
+        return next;
+      });
+      return true;
+    },
+    [validateStep, context, getValidationStepNumber],
+  );
+
+  const handleFieldChange = useCallback((field, value) => {
+    updateField(field, value);
+  }, [updateField]);
+
+  const handleMotivoChange = useCallback((patch) => {
+    updateMany(patch);
+  }, [updateMany]);
+
+  const handleAdvance = useCallback(() => {
+    if (ensureStepValid(step)) {
+      setStep((prev) => Math.min(maxStep, prev + 1));
     }
-    const payload = { ...form, motivoGroup: resolvedGroupId, pacienteEdad: edad };
+  }, [ensureStepValid, step, maxStep]);
+
+  const handleFinalSubmit = useCallback(() => {
+    for (const target of validationStepIndexes) {
+      if (!ensureStepValid(target)) {
+        setStep(target);
+        return;
+      }
+    }
+    const payload = { ...flat, motivoGroup: resolvedGroupId, pacienteEdad: edad };
     onSubmit?.(payload);
-  };
+  }, [ensureStepValid, validationStepIndexes, flat, resolvedGroupId, edad, onSubmit]);
 
-  const minStep = showAdministrativeStep ? 1 : 2;
-  const maxStep = 5;
+  const handlePrimaryAction = useCallback(() => {
+    if (step === maxStep) {
+      handleFinalSubmit();
+    } else {
+      handleAdvance();
+    }
+  }, [step, maxStep, handleAdvance, handleFinalSubmit]);
 
-  const goToStep = (next) => {
-    const clamped = Math.min(maxStep, Math.max(minStep, next));
-    setStep(clamped);
-  };
+  const handleBack = useCallback(() => {
+    setStep((prev) => Math.max(minStep, prev - 1));
+  }, [minStep]);
+
+  const goToStep = useCallback((target) => {
+    setStep(Math.max(minStep, Math.min(maxStep, target)));
+  }, [minStep, maxStep]);
+
+  const handleCancelClick = useCallback(() => {
+    clearAutosave();
+    if (typeof onCancel === 'function') {
+      onCancel(flat);
+    }
+  }, [clearAutosave, onCancel, flat]);
 
   const stepShortcuts = useMemo(
-    () => ([
-      { number: 2, label: 'Motivo' },
-      { number: 3, label: 'Paciente' },
-      { number: 4, label: 'Específico' },
-      { number: 5, label: 'Revisión' },
-    ]),
-    [],
+    () => steps
+      .map((definition, index) => ({
+        number: index + 1,
+        label: definition.label,
+        id: definition.id,
+        enabled: definition.enabled !== false,
+      }))
+      .filter((entry) => entry.id !== 'administrativo'),
+    [steps],
   );
 
-  const visibleSteps = useMemo(() => {
-    const labels = ['Administrativo', 'Motivo', 'Paciente', 'Específico', 'Revisión'];
-    return labels
-      .map((label, index) => ({ label, number: index + 1 }))
-      .filter((entry) => showAdministrativeStep || entry.number !== 1);
-  }, [showAdministrativeStep]);
+  const currentStepErrors = stepErrors[step] || {};
+  const errorMessages = Object.values(currentStepErrors);
+  const autosaveMessage = useMemo(() => getAutosaveMessage(autosaveState), [autosaveState]);
+  const currentStepDefinition = steps[step - 1] || steps[0];
+  const currentStepId = currentStepDefinition?.id;
 
-  const nextDisabled = (
-    (step === 1 && showAdministrativeStep && !canNextFromStep1) ||
-    (step === 2 && !canNextFromStep2) ||
-    (step === 3 && !canNextFromStep3)
-  );
+  const primaryButtonDisabled = step === maxStep ? busy : (!currentValidation.valid || busy);
+  const backDisabled = step <= minStep || busy;
+  const nextButtonLabel = step === maxStep ? (busy ? 'Creando…' : 'Crear HC') : 'Siguiente';
 
   return (
     <div className="min-h-screen w-full bg-slate-50">
@@ -198,77 +291,149 @@ export default function NewCaseWizard({
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold">Nueva HC familiar</h1>
-            <span className="text-xs text-slate-500">Profesional: {form.medicoAsignado || '—'}</span>
+            <span className="text-xs text-slate-500">Profesional: {flat.medicoAsignado || currentUser?.name || currentUser?.email || '—'}</span>
           </div>
           <button
             type="button"
-            onClick={() => {
-              if (typeof onCancel === 'function') {
-                onCancel(form);
-              }
-            }}
+            onClick={handleCancelClick}
             className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
           >
             Cancelar
           </button>
         </div>
-        <div className="mx-auto max-w-6xl px-4 py-2 flex items-center gap-2 text-xs text-slate-600">
-          {visibleSteps.map(({ label, number }) => {
-            const active = step === number;
+        <nav
+          className="mx-auto max-w-6xl px-4 pb-3 flex flex-wrap items-center gap-2 text-xs text-slate-600"
+          aria-label="Navegación del caso"
+        >
+          {steps.map((definition, index) => {
+            if (!showAdministrativeStep && definition.id === 'administrativo') return null;
+            const number = index + 1;
+            const isActive = step === number;
+            const isEnabled = definition.enabled !== false;
+            const disabled = (!isEnabled && !isActive) || busy;
+            const display = `${number}. ${definition.label}`;
+            const spacingClass = (definition.id === 'preguntas' || definition.id === 'identificacion') ? 'ml-4' : '';
             return (
-              <div key={label} className={`px-2 py-1 rounded-lg border ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200'}`}>
-                {showAdministrativeStep ? `${number}. ${label}` : label}
-              </div>
+              <button
+                key={definition.id}
+                type="button"
+                onClick={() => goToStep(number)}
+                disabled={disabled}
+                aria-current={isActive ? 'page' : undefined}
+                className={`${spacingClass} ${isActive
+                  ? 'px-3 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white font-semibold shadow-sm'
+                  : 'px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:opacity-60'
+                }`}
+              >
+                {display}
+              </button>
             );
           })}
-        </div>
+        </nav>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 pb-28 grid gap-6">
-        {showAdministrativeStep && step === 1 && (
+        {errorMessages.length > 0 && (
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+          >
+            <p className="font-semibold">Revisá los campos obligatorios antes de continuar:</p>
+            <ul className="mt-1 list-disc pl-4 space-y-1">
+              {errorMessages.map((message, index) => (
+                <li key={`${message}-${index}`}>{message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {currentStepId === 'administrativo' && (
           <StepAdministrativo
             grupos={GRUPOS_CONSULTA}
-            value={form}
-            onChange={handleChange}
+            value={flat}
+            onChange={handleFieldChange}
           />
         )}
 
-        {step === 2 && (
+        {currentStepId === 'motivo' && (
           <StepMotivo
             grupos={GRUPOS_CONSULTA}
-            value={{ motivoGroup: form.motivoGroup, motivoDetail: form.motivoDetail, motivoPaciente: form.motivoPaciente, motivoDerivacion: form.motivoDerivacion }}
-            onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
+            value={{
+              motivoGroup: flat.motivoGroup,
+              motivoDetail: flat.motivoDetail,
+              motivoPaciente: flat.motivoPaciente,
+              motivoDerivacion: flat.motivoDerivacion,
+            }}
+            onChange={handleMotivoChange}
           />
         )}
 
-        {step === 3 && (
+        {currentStepId === 'antecedentes' && (
           <StepPaciente
             secciones={secciones}
             grupos={GRUPOS_CONSULTA}
-            value={form}
+            value={flat}
             edad={edad}
-            onChange={handleChange}
+            onChange={handleFieldChange}
+            mode="antecedentes"
           />
         )}
 
-        {step === 4 && (
+        {currentStepId === 'historia' && (
+          <StepPaciente
+            secciones={secciones}
+            grupos={GRUPOS_CONSULTA}
+            value={flat}
+            edad={edad}
+            onChange={handleFieldChange}
+            mode="historia"
+          />
+        )}
+
+        {currentStepId === 'preguntas' && (
           <StepGrupoEspecifico
             groupId={resolvedGroupId}
-            value={form}
-            edad={edad}
-            onChange={handleChange}
+            value={flat}
+            onChange={handleFieldChange}
           />
         )}
 
-        {step === 5 && (
-          <StepResumen
-            value={form}
-            edad={edad}
+        {currentStepId === 'examen' && (
+          <StepPaciente
+            secciones={secciones}
             grupos={GRUPOS_CONSULTA}
-            onEditStep={goToStep}
+            value={flat}
+            edad={edad}
+            onChange={handleFieldChange}
+            mode="examen"
           />
         )}
 
+        {currentStepId === 'estudios' && (
+          <StepEstudiosComplementarios
+            groupId={resolvedGroupId}
+            value={flat}
+            onChange={handleFieldChange}
+          />
+        )}
+
+        {currentStepId === 'primera' && (
+          <StepPrimeraEvolucion
+            value={flat}
+            onChange={handleFieldChange}
+          />
+        )}
+
+        {currentStepId === 'identificacion' && (
+          <StepPaciente
+            secciones={secciones}
+            grupos={GRUPOS_CONSULTA}
+            value={flat}
+            edad={edad}
+            onChange={handleFieldChange}
+            mode="identificacion"
+          />
+        )}
       </main>
 
       <nav
@@ -278,59 +443,51 @@ export default function NewCaseWizard({
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <button
             type="button"
-            onClick={() => goToStep(step - 1)}
-            disabled={step <= minStep || busy}
+            onClick={handleBack}
+            disabled={backDisabled}
             className="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:hover:bg-transparent"
           >
             Atrás
           </button>
 
-          {step >= 2 ? (
-            <div
-              className="hidden flex-1 items-center justify-center gap-2 text-xs text-slate-600 sm:flex"
-              aria-label="Accesos rápidos a los pasos clínicos"
-            >
-              <span className="font-semibold text-slate-500">Ir a:</span>
-              {stepShortcuts.map(({ number, label }) => {
-                const isActive = step === number;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => goToStep(number)}
-                    disabled={isActive || busy}
-                    aria-current={isActive ? 'step' : undefined}
-                    className={
-                      isActive
-                        ? 'px-3 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white font-semibold'
-                        : 'px-3 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:opacity-50'
-                    }
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <span className="hidden flex-1 text-center text-xs text-slate-500 sm:block">
-              Completá los datos y usá “Siguiente” para avanzar.
-            </span>
-          )}
+          <div className="hidden flex-1 items-center justify-center gap-2 text-xs text-slate-600 sm:flex" aria-label="Accesos rápidos a los pasos clínicos">
+            <span className="font-semibold text-slate-500">Ir a:</span>
+            {stepShortcuts.map(({ number, label, enabled }) => {
+              const isActive = step === number;
+              const disabled = isActive || busy || !enabled;
+              const displayLabel = `${number}. ${label}`;
+              return (
+                <button
+                  key={number}
+                  type="button"
+                  onClick={() => goToStep(number)}
+                  disabled={disabled}
+                  aria-current={isActive ? 'step' : undefined}
+                  className={
+                    isActive
+                      ? 'px-3 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white font-semibold'
+                      : 'px-3 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:opacity-50'
+                  }
+                >
+                  {displayLabel}
+                </button>
+              );
+            })}
+          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (step === maxStep) {
-                handleFinalSubmit();
-              } else {
-                goToStep(step + 1);
-              }
-            }}
-            disabled={(step < maxStep && nextDisabled) || (step === maxStep && busy)}
-            className="px-4 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white disabled:opacity-50"
-          >
-            {step === maxStep ? (busy ? 'Creando…' : 'Crear HC') : 'Siguiente'}
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            {autosaveMessage && (
+              <span className="text-[11px] text-slate-400" aria-live="polite">{autosaveMessage}</span>
+            )}
+            <button
+              type="button"
+              onClick={handlePrimaryAction}
+              disabled={primaryButtonDisabled}
+              className="px-4 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white disabled:opacity-50"
+            >
+              {nextButtonLabel}
+            </button>
+          </div>
         </div>
       </nav>
     </div>
