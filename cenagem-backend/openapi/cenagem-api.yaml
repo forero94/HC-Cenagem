@@ -1,0 +1,573 @@
+openapi: 3.1.0
+info:
+  title: CENAGEM API
+  description: API oficial para historias clínicas familiares, agenda, estudios y adjuntos.
+  version: 1.0.0
+servers:
+  - url: https://api.cenagem.gob.ar/api/v1
+    description: Producción
+  - url: http://localhost:3000/api/v1
+    description: Desarrollo local
+paths:
+  /families:
+    get:
+      tags: [families]
+      summary: Listar familias
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyListResponse"
+    post:
+      tags: [families]
+      summary: Crear familia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyCreateInput"
+      responses:
+        '201':
+          description: Familia creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyDetail"
+  /families/{familyId}:
+    get:
+      tags: [families]
+      summary: Obtener familia
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      responses:
+        '200':
+          description: Detalle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyDetail"
+    patch:
+      tags: [families]
+      summary: Actualizar familia
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyUpdateInput"
+      responses:
+        '200':
+          description: Familia actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyDetail"
+  /families/{familyId}/members:
+    get:
+      tags: [families]
+      summary: Listar miembros
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      responses:
+        '200':
+          description: Miembros
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FamilyMember"
+    post:
+      tags: [families]
+      summary: Crear miembro
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyMemberCreateInput"
+      responses:
+        '201':
+          description: Miembro creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyMember"
+  /families/{familyId}/members/{memberId}:
+    patch:
+      tags: [families]
+      summary: Actualizar miembro
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyMemberUpdateInput"
+      responses:
+        '200':
+          description: Miembro actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyMember"
+  /families/{familyId}/evolutions:
+    get:
+      tags: [families]
+      summary: Listar evoluciones
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      responses:
+        '200':
+          description: Evoluciones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FamilyEvolution"
+  /families/{familyId}/members/{memberId}/evolutions:
+    post:
+      tags: [families]
+      summary: Registrar evolución
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvolutionCreateInput"
+      responses:
+        '201':
+          description: Evolución creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyEvolution"
+  /families/{familyId}/appointments:
+    get:
+      tags: [appointments]
+      summary: Turnos de una familia
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      responses:
+        '200':
+          description: Turnos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentListResponse"
+    post:
+      tags: [appointments]
+      summary: Crear turno para familia
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentCreateInput"
+      responses:
+        '201':
+          description: Turno creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+  /appointments/{appointmentId}:
+    patch:
+      tags: [appointments]
+      summary: Actualizar turno
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentUpdateInput"
+      responses:
+        '200':
+          description: Turno actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+    delete:
+      tags: [appointments]
+      summary: Eliminar turno
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      responses:
+        '200':
+          description: Eliminado
+  /families/{familyId}/studies:
+    get:
+      tags: [studies]
+      summary: Estudios de una familia
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      responses:
+        '200':
+          description: Estudios
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyListResponse"
+    post:
+      tags: [studies]
+      summary: Registrar estudio
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudyCreateInput"
+      responses:
+        '201':
+          description: Estudio creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Study"
+  /studies/{studyId}:
+    patch:
+      tags: [studies]
+      summary: Actualizar estudio
+      parameters:
+        - $ref: "#/components/parameters/StudyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudyUpdateInput"
+      responses:
+        '200':
+          description: Estudio actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Study"
+    delete:
+      tags: [studies]
+      summary: Eliminar estudio
+      parameters:
+        - $ref: "#/components/parameters/StudyId"
+      responses:
+        '200':
+          description: Estudio eliminado
+  /families/{familyId}/attachments:
+    get:
+      tags: [attachments]
+      summary: Adjuntos de una familia
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      responses:
+        '200':
+          description: Adjuntos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentListResponse"
+    post:
+      tags: [attachments]
+      summary: Crear adjunto
+      parameters:
+        - $ref: "#/components/parameters/FamilyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachmentCreateInput"
+      responses:
+        '201':
+          description: Adjunto creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentDetail"
+components:
+  parameters:
+    FamilyId:
+      name: familyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AppointmentId:
+      name: appointmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    StudyId:
+      name: studyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    FamilyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/FamilySummary"
+    FamilySummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        status:
+          type: string
+    FamilyDetail:
+      allOf:
+        - $ref: "#/components/schemas/FamilySummary"
+        - type: object
+          properties:
+            members:
+              type: array
+              items:
+                $ref: "#/components/schemas/FamilyMember"
+            appointments:
+              type: array
+              items:
+                $ref: "#/components/schemas/Appointment"
+            studies:
+              type: array
+              items:
+                $ref: "#/components/schemas/Study"
+            attachments:
+              type: array
+              items:
+                $ref: "#/components/schemas/Attachment"
+    FamilyCreateInput:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        displayName:
+          type: string
+    FamilyUpdateInput:
+      allOf:
+        - $ref: "#/components/schemas/FamilyCreateInput"
+    FamilyMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        familyId:
+          type: string
+          format: uuid
+        role:
+          type: string
+        initials:
+          type: string
+        diagnosis:
+          type: string
+          nullable: true
+    FamilyMemberCreateInput:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+        initials:
+          type: string
+    FamilyMemberUpdateInput:
+      allOf:
+        - $ref: "#/components/schemas/FamilyMemberCreateInput"
+    FamilyEvolution:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        note:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+    EvolutionCreateInput:
+      type: object
+      required: [note]
+      properties:
+        note:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+          nullable: true
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        familyId:
+          type: string
+          format: uuid
+        scheduledFor:
+          type: string
+          format: date-time
+        status:
+          type: string
+    AppointmentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Appointment"
+    AppointmentCreateInput:
+      type: object
+      required: [scheduledFor]
+      properties:
+        familyId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+          nullable: true
+        scheduledFor:
+          type: string
+          format: date-time
+    AppointmentUpdateInput:
+      allOf:
+        - $ref: "#/components/schemas/AppointmentCreateInput"
+    Study:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        familyId:
+          type: string
+          format: uuid
+        type:
+          type: string
+        status:
+          type: string
+        name:
+          type: string
+    StudyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Study"
+    StudyCreateInput:
+      type: object
+      required: [type, name]
+      properties:
+        familyId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+        status:
+          type: string
+        name:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+          nullable: true
+    StudyUpdateInput:
+      allOf:
+        - $ref: "#/components/schemas/StudyCreateInput"
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        familyId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        category:
+          type: string
+    AttachmentDetail:
+      allOf:
+        - $ref: "#/components/schemas/Attachment"
+        - type: object
+          properties:
+            base64Data:
+              type: string
+              nullable: true
+    AttachmentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attachment"
+    AttachmentCreateInput:
+      type: object
+      required: [fileName, base64Data]
+      properties:
+        familyId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+          nullable: true
+        fileName:
+          type: string
+        category:
+          type: string
+        base64Data:
+          type: string
+    AttachmentUpdateInput:
+      allOf:
+        - $ref: "#/components/schemas/AttachmentCreateInput"

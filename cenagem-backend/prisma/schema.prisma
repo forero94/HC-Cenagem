@@ -1,0 +1,445 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  INVITED
+}
+
+enum Permission {
+  CASES_VIEW
+  CASES_MANAGE
+  USERS_VIEW
+  USERS_MANAGE
+  CATALOGUE_MANAGE
+  AUDIT_VIEW
+}
+
+enum PatientSex {
+  FEMALE
+  MALE
+  NON_BINARY
+  UNSPECIFIED
+}
+
+enum ClinicalCaseStatus {
+  DRAFT
+  IN_REVIEW
+  CLOSED
+}
+
+enum FamilyStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  IN_ROOM
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum StudyType {
+  COMPLEMENTARY
+  GENETIC
+  OTHER
+}
+
+enum StudyStatus {
+  REQUESTED
+  IN_PROGRESS
+  DELIVERED
+  CANCELLED
+}
+
+enum AttachmentCategory {
+  DOCUMENT
+  STUDY_RESULT
+  PHOTO
+  OTHER
+}
+
+enum GuardianType {
+  FATHER
+  MOTHER
+  TUTOR
+  OTHER
+}
+
+enum ConsanguinityLevel {
+  NO
+  POSIBLE
+  CONFIRMADA
+  DESCONOCIDO
+}
+
+model User {
+  id            String       @id @default(uuid())
+  email         String       @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  status        UserStatus   @default(ACTIVE)
+  lastLoginAt   DateTime?
+  roles         UserRole[]
+  sessions      Session[]
+  auditLogs     AuditLog[]   @relation("AuditActor")
+  uploadedFiles Attachment[] @relation("AttachmentUploader")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String?
+  permissions Permission[]
+  users       UserRole[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedBy String?
+  assignedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  createdAt        DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedBy        String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String? // Nullable to allow system events
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+}
+
+model Patient {
+  id                   String         @id @default(uuid())
+  firstName            String
+  lastName             String
+  documentNumber       String
+  birthDate            DateTime?
+  sex                  PatientSex?
+  province             String?
+  address              String?
+  email                String?
+  phonePrimary         String?
+  phoneSecondary       String?
+  occupation           String?
+  schoolingLevel       String?
+  schoolingPerformance String?
+  coverageProvider     String?
+  coverageNumber       String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  cases                ClinicalCase[]
+}
+
+model ClinicalCase {
+  id                  String             @id @default(uuid())
+  patientId           String
+  caseCode            String?
+  consultationDate    DateTime?
+  motiveGroup         String?
+  motiveDetail        String?
+  motiveNarrative     String?
+  referralReason      String?
+  assignedPhysicianId String?
+  status              ClinicalCaseStatus @default(DRAFT)
+  createdById         String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  patient              Patient                           @relation(fields: [patientId], references: [id])
+  administrative       ClinicalCaseAdministrative?
+  clinical             ClinicalCaseClinical?
+  complementaryStudies ClinicalCaseComplementaryStudies?
+  groupSections        ClinicalCaseGroupSection[]
+  guardians            ClinicalCaseGuardian[]
+
+  @@index([patientId])
+  @@index([caseCode])
+  @@index([motiveGroup])
+}
+
+model ClinicalCaseAdministrative {
+  caseId                String  @id
+  companionName         String?
+  companionRelation     String?
+  primaryPhone          String?
+  secondaryPhone        String?
+  assignedPhysicianName String?
+  notes                 String?
+
+  case ClinicalCase @relation(fields: [caseId], references: [id])
+}
+
+model ClinicalCaseGuardian {
+  id              String              @id @default(uuid())
+  caseId          String
+  type            GuardianType
+  fullName        String?
+  countryOfOrigin String?
+  consanguinity   ConsanguinityLevel?
+  paternalSurname String?
+  paternalOrigin  String?
+  maternalSurname String?
+  maternalOrigin  String?
+  contactPhone    String?
+  contactEmail    String?
+
+  case ClinicalCase @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+}
+
+model ClinicalCaseClinical {
+  caseId              String   @id
+  behaviour           Json?
+  context             Json?
+  perinatal           Json?
+  anthropometry       Json?
+  physicalExam        Json?
+  development         Json?
+  metabolicScreening  Json?
+  prenatalFindings    Json?
+  reproductiveHistory Json?
+  oncologyHistory     Json?
+  incidentalFinding   Json?
+  consanguinity       Json?
+  familyHistory       Json?
+  grandparents        Json?
+  summaryFirstConsult String?
+  firstEvolution      String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  case ClinicalCase @relation(fields: [caseId], references: [id])
+}
+
+model ClinicalCaseComplementaryStudies {
+  caseId       String  @id
+  primerNivel  String?
+  segundoNivel String?
+  tercerNivel  String?
+  notas        String?
+
+  case ClinicalCase @relation(fields: [caseId], references: [id])
+}
+
+model ClinicalCaseGroupSection {
+  id         String   @id @default(uuid())
+  caseId     String
+  sectionKey String
+  data       Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  case ClinicalCase @relation(fields: [caseId], references: [id])
+
+  @@unique([caseId, sectionKey])
+  @@index([sectionKey])
+}
+
+model Family {
+  id               String            @id @default(uuid())
+  code             String            @unique
+  displayName      String?
+  status           FamilyStatus      @default(ACTIVE)
+  province         String?
+  city             String?
+  address          String?
+  tags             String[]          @default([])
+  motiveGroup      String?
+  motiveDetail     String?
+  motiveNotes      String?
+  motiveNarrative  String?
+  motivePatient    String?
+  motiveDerivation String?
+  contactInfo      Json?
+  consanguinity    Json?
+  obstetricHistory Json?
+  grandparents     Json?
+  intake           Json?
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  members          FamilyMember[]
+  appointments     Appointment[]
+  studies          Study[]
+  attachments      Attachment[]
+  evolutions       MemberEvolution[]
+}
+
+model FamilyMember {
+  id             String      @id @default(uuid())
+  familyId       String
+  role           String?
+  givenName      String?
+  middleName     String?
+  lastName       String?
+  initials       String?
+  relationship   String?
+  birthDate      DateTime?
+  sex            PatientSex?
+  occupation     String?
+  schoolingLevel String?
+  diagnosis      String?
+  summary        String?
+  notes          Json?
+  filiatorios    Json?
+  antecedentes   Json?
+  contacto       Json?
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  family       Family            @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  studies      Study[]
+  evolutions   MemberEvolution[]
+  Attachment   Attachment[]
+
+  @@index([familyId])
+  @@index([initials])
+}
+
+model MemberEvolution {
+  id          String   @id @default(uuid())
+  familyId    String
+  memberId    String
+  authorName  String?
+  authorEmail String?
+  note        String
+  recordedAt  DateTime @default(now())
+  metadata    Json?
+
+  family Family       @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@index([memberId])
+  @@index([recordedAt])
+}
+
+model Appointment {
+  id           String            @id @default(uuid())
+  familyId     String?
+  memberId     String?
+  scheduledFor DateTime
+  durationMins Int?
+  seatNumber   Int?
+  motive       String?
+  notes        String?
+  status       AppointmentStatus @default(SCHEDULED)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  metadata     Json?
+
+  family Family?       @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  member FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([familyId])
+  @@index([memberId])
+  @@index([scheduledFor])
+}
+
+model Study {
+  id          String      @id @default(uuid())
+  familyId    String
+  memberId    String?
+  type        StudyType   @default(OTHER)
+  status      StudyStatus @default(REQUESTED)
+  name        String
+  description String?
+  requestedAt DateTime?   @default(now())
+  resultAt    DateTime?
+  notes       String?
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  family      Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  member      FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  attachments Attachment[]
+
+  @@index([familyId])
+  @@index([memberId])
+  @@index([type])
+  @@index([status])
+}
+
+model Attachment {
+  id           String             @id @default(uuid())
+  familyId     String
+  memberId     String?
+  studyId      String?
+  uploadedById String?
+  fileName     String
+  contentType  String?
+  size         Int?
+  category     AttachmentCategory @default(OTHER)
+  description  String?
+  tags         String[]           @default([])
+  metadata     Json?
+  content      Bytes?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  family     Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  member     FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  study      Study?        @relation(fields: [studyId], references: [id], onDelete: SetNull)
+  uploadedBy User?         @relation("AttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([familyId])
+  @@index([memberId])
+  @@index([studyId])
+  @@index([createdAt])
+  @@index([category])
+}
