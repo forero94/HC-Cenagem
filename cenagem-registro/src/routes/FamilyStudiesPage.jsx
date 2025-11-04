@@ -129,6 +129,70 @@ const ageLabel = (member) => {
   return yearsSince(member?.nacimiento);
 };
 
+// Paleta para tarjetas de estudios; se asigna determinísticamente por tipo
+const STUDY_CARD_THEMES = [
+  {
+    accentBar: "bg-sky-500",
+    accentSoft: "bg-sky-50",
+    border: "border-sky-200",
+    badgeBg: "bg-sky-100",
+    badgeText: "text-sky-700",
+    chipBorder: "border-sky-200",
+    chipText: "text-sky-700",
+  },
+  {
+    accentBar: "bg-emerald-500",
+    accentSoft: "bg-emerald-50",
+    border: "border-emerald-200",
+    badgeBg: "bg-emerald-100",
+    badgeText: "text-emerald-700",
+    chipBorder: "border-emerald-200",
+    chipText: "text-emerald-700",
+  },
+  {
+    accentBar: "bg-amber-500",
+    accentSoft: "bg-amber-50",
+    border: "border-amber-200",
+    badgeBg: "bg-amber-100",
+    badgeText: "text-amber-700",
+    chipBorder: "border-amber-200",
+    chipText: "text-amber-700",
+  },
+  {
+    accentBar: "bg-violet-500",
+    accentSoft: "bg-violet-50",
+    border: "border-violet-200",
+    badgeBg: "bg-violet-100",
+    badgeText: "text-violet-700",
+    chipBorder: "border-violet-200",
+    chipText: "text-violet-700",
+  },
+  {
+    accentBar: "bg-rose-500",
+    accentSoft: "bg-rose-50",
+    border: "border-rose-200",
+    badgeBg: "bg-rose-100",
+    badgeText: "text-rose-700",
+    chipBorder: "border-rose-200",
+    chipText: "text-rose-700",
+  },
+  {
+    accentBar: "bg-indigo-500",
+    accentSoft: "bg-indigo-50",
+    border: "border-indigo-200",
+    badgeBg: "bg-indigo-100",
+    badgeText: "text-indigo-700",
+    chipBorder: "border-indigo-200",
+    chipText: "text-indigo-700",
+  },
+];
+
+const themeForStudyType = (tipo) => {
+  const normalized = (tipo || "otros").toString().toLowerCase();
+  const sum = Array.from(normalized).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return STUDY_CARD_THEMES[sum % STUDY_CARD_THEMES.length];
+};
+
 // Config de screenings estándar
 const SCREENING_DEFS = [
   { key: "ecografiaAbdominoRenal", label: "Ecografía abdomino-renal" },
@@ -469,17 +533,17 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
   }
 
   return (
-    <div className={inline ? "" : "p-6 grid gap-4"}>
+    <div className={inline ? "" : "app-shell p-6 grid gap-4"}>
       {!inline && (
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between text-white">
           <div className="flex items-center gap-2">
             <button
-              onClick={()=>{ window.location.hash = `#/family/${fam.id}`; }}
-              className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+              onClick={() => { window.location.hash = `#/family/${fam.id}`; }}
+              className="px-3 py-2 rounded-xl border border-white/40 text-white hover:bg-white/10 transition"
             >
               ↩ Volver a HC
             </button>
-            <h2 className="text-lg font-semibold">Estudios complementarios</h2>
+            <h2 className="text-lg font-semibold text-white">Estudios complementarios</h2>
           </div>
         </div>
       )}
@@ -533,37 +597,67 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
               {filteredStudies.map((study) => {
                 const member = study.memberId ? members.find((item) => item.id === study.memberId) : null;
                 const studyAttachments = attachmentsByStudy.get(study.id) || [];
+                const memberLabel = member
+                  ? `${member.filiatorios?.iniciales || member.rol} · ${member.nombre || "—"}`
+                  : "Familia";
+                const theme = themeForStudyType(study.tipo);
                 return (
-                  <div key={study.id} className="flex items-start justify-between px-3 py-2 rounded-xl border border-slate-200">
-                    <div className="text-sm">
-                      <div><b>{study.tipo}</b> · {study.nombre || "—"}</div>
-                      <div className="text-slate-600">
-                        {fmtDate(study.fecha)} · {(member?.filiatorios?.iniciales || (member ? member.rol : "familia"))}
-                        {study.resultado ? ` · ${study.resultado}` : ""}
+                  <article
+                    key={study.id}
+                    className={`relative overflow-hidden rounded-2xl border ${theme.border} bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg`}
+                  >
+                    <div className={`absolute inset-x-0 top-0 h-1 ${theme.accentBar}`} aria-hidden="true" />
+                    <div className="px-4 py-3 grid gap-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="grid gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1 self-start rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${theme.badgeBg} ${theme.badgeText}`}
+                          >
+                            {study.tipo || "Estudio"}
+                          </span>
+                          <div className="text-base font-semibold text-slate-900">
+                            {study.nombre || "—"}
+                          </div>
+                          <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                            <span>Fecha: {fmtDate(study.fecha)}</span>
+                            <span>Paciente: {memberLabel}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStudy(study.id)}
+                          className="rounded-full border border-transparent p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                          title="Eliminar"
+                          aria-label="Eliminar estudio"
+                        >
+                          <span aria-hidden="true">🗑</span>
+                        </button>
                       </div>
+
+                      {study.resultado && (
+                        <div
+                          className={`text-sm leading-relaxed text-slate-700 px-3 py-2 rounded-xl ${theme.accentSoft}`}
+                        >
+                          {study.resultado}
+                        </div>
+                      )}
+
                       {Boolean(studyAttachments.length) && (
-                        <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                        <div className="flex flex-wrap gap-2">
                           {studyAttachments.map((attachment) => (
                             <button
                               key={attachment.id}
                               type="button"
                               onClick={() => handleDownloadAttachment(attachment)}
-                              className="text-blue-600 underline text-left"
+                              className={`inline-flex items-center gap-1 rounded-full border bg-white px-3 py-1.5 text-xs font-medium transition hover:bg-slate-50 ${theme.chipBorder} ${theme.chipText}`}
                             >
-                              Descargar {attachment.fileName || attachment.description || 'adjunto'}
+                              {attachment.fileName || attachment.description || "Adjunto"}
                             </button>
                           ))}
                         </div>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleDeleteStudy(study.id)}
-                      className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-red-50"
-                      title="Eliminar"
-                    >
-                      🗑
-                    </button>
-                  </div>
+                  </article>
                 );
               })}
             </div>

@@ -18,6 +18,7 @@ const swagger_1 = require("@nestjs/swagger");
 const _common_1 = require("../../../../../dist/libs/common/index");
 const login_dto_1 = require("./dto/login.dto");
 const refresh_token_dto_1 = require("./dto/refresh-token.dto");
+const upload_ticket_login_dto_1 = require("./dto/upload-ticket-login.dto");
 const auth_service_1 = require("./auth.service");
 let AuthController = class AuthController {
     authService;
@@ -29,6 +30,9 @@ let AuthController = class AuthController {
     }
     async refresh(payload, request) {
         return this.authService.refresh(payload.refreshToken, this.buildContext(request));
+    }
+    async loginWithUploadTicket(payload, request) {
+        return this.authService.exchangeUploadTicket(payload.ticket, this.buildContext(request));
     }
     async logout(user) {
         await this.authService.logout(user.userId, user.sessionId);
@@ -62,6 +66,15 @@ __decorate([
     __metadata("design:paramtypes", [refresh_token_dto_1.RefreshTokenDto, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "refresh", null);
+__decorate([
+    (0, _common_1.Public)(),
+    (0, common_1.Post)('upload-ticket'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [upload_ticket_login_dto_1.UploadTicketLoginDto, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "loginWithUploadTicket", null);
 __decorate([
     (0, common_1.HttpCode)(204),
     (0, common_1.Post)('logout'),

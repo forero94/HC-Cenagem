@@ -31,13 +31,19 @@ export class UsersService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  findByEmailWithRoles(email: string) {
+  findByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
       include: this.userInclude,
     });
   }
 
+  findByUsername(username: string) {
+    return this.prisma.user.findUnique({
+      where: { email: username.toLowerCase().trim() }, // Assuming 'email' field stores the username
+      include: this.userInclude,
+    });
+  }
   findByIdWithRoles(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
@@ -56,27 +62,27 @@ export class UsersService {
     input: CreateUserDto,
     actorId: string | null,
   ): Promise<UserWithRoles> {
-    const email = input.email.toLowerCase().trim();
+    const username = input.username.toLowerCase().trim();
     const existing = await this.prisma.user.findUnique({
-      where: { email },
+      where: { email: username }, // Still using 'email' column in DB for username
     });
 
     if (existing) {
       throw new BadRequestException(
-        `El correo ${input.email} ya está registrado.`,
+        `El usuario ${input.username} ya está registrado.`,
       );
     }
-
     const passwordHash = await argon2.hash(input.password);
     const roleNames = input.roles ?? [];
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const user = await tx.user.create({
         data: {
-          email,
+          email: username,
           passwordHash,
           firstName: input.firstName,
           lastName: input.lastName,
+          licenseNumber: input.licenseNumber?.trim() || null,
         },
       });
 

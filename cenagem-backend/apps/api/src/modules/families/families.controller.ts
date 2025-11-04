@@ -15,7 +15,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { FamiliesService } from './families.service';
+import { FamiliesService } from './services/families.service';
 import { CreateFamilyDto } from './dto/create-family.dto';
 import { UpdateFamilyDto } from './dto/update-family.dto';
 import { ListFamiliesQueryDto } from './dto/list-families.query';
@@ -23,6 +23,8 @@ import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import { CreateEvolutionDto } from './dto/create-evolution.dto';
 import { ListEvolutionsQueryDto } from './dto/list-evolutions.query';
+import { FamilyMembersService } from './services/family-members.service';
+import { FamilyEvolutionsService } from './services/family-evolutions.service';
 
 @ApiTags('families')
 @Controller({
@@ -30,7 +32,11 @@ import { ListEvolutionsQueryDto } from './dto/list-evolutions.query';
   version: '1',
 })
 export class FamiliesController {
-  constructor(private readonly families: FamiliesService) {}
+  constructor(
+    private readonly families: FamiliesService,
+    private readonly members: FamilyMembersService,
+    private readonly evolutions: FamilyEvolutionsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Listar familias' })
@@ -67,7 +73,7 @@ export class FamiliesController {
   @ApiOperation({ summary: 'Listar miembros de una familia' })
   @ApiOkResponse({ description: 'Miembros listados' })
   listMembers(@Param('familyId', ParseUUIDPipe) familyId: string) {
-    return this.families.listMembers(familyId);
+    return this.members.listMembers(familyId);
   }
 
   @Post(':familyId/members')
@@ -77,7 +83,7 @@ export class FamiliesController {
     @Param('familyId', ParseUUIDPipe) familyId: string,
     @Body() body: CreateMemberDto,
   ) {
-    return this.families.createMember(familyId, body);
+    return this.members.createMember(familyId, body);
   }
 
   @Get(':familyId/members/:memberId')
@@ -87,7 +93,7 @@ export class FamiliesController {
     @Param('familyId', ParseUUIDPipe) familyId: string,
     @Param('memberId', ParseUUIDPipe) memberId: string,
   ) {
-    return this.families.getMemberOrThrow(familyId, memberId);
+    return this.members.getMemberOrThrow(familyId, memberId);
   }
 
   @Patch(':familyId/members/:memberId')
@@ -98,7 +104,7 @@ export class FamiliesController {
     @Param('memberId', ParseUUIDPipe) memberId: string,
     @Body() body: UpdateMemberDto,
   ) {
-    return this.families.updateMember(familyId, memberId, body);
+    return this.members.updateMember(familyId, memberId, body);
   }
 
   @Delete(':familyId/members/:memberId')
@@ -108,7 +114,7 @@ export class FamiliesController {
     @Param('familyId', ParseUUIDPipe) familyId: string,
     @Param('memberId', ParseUUIDPipe) memberId: string,
   ) {
-    await this.families.deleteMember(familyId, memberId);
+    await this.members.deleteMember(familyId, memberId);
     return { success: true };
   }
 
@@ -121,7 +127,7 @@ export class FamiliesController {
     @Param('familyId', ParseUUIDPipe) familyId: string,
     @Query() query: ListEvolutionsQueryDto,
   ) {
-    return this.families.listEvolutions(familyId, query);
+    return this.evolutions.listEvolutions(familyId, query);
   }
 
   @Post(':familyId/members/:memberId/evolutions')
@@ -132,6 +138,6 @@ export class FamiliesController {
     @Param('memberId', ParseUUIDPipe) memberId: string,
     @Body() body: CreateEvolutionDto,
   ) {
-    return this.families.createEvolution(familyId, memberId, body);
+    return this.evolutions.createEvolution(familyId, memberId, body);
   }
 }

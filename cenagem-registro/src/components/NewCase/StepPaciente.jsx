@@ -41,13 +41,25 @@ export default function StepPaciente({
   edad: edadDesdePadre,
   onChange,
   mode = 'historia',
+  errors = {},
 }) {
 
   const normalizedMode = ['historia', 'antecedentes', 'examen', 'identificacion'].includes(mode) ? mode : 'historia';
 
   const v = value;
+  const fieldErrors = errors || {};
+  const errorFor = (field) => (typeof fieldErrors[field] === 'string' ? fieldErrors[field] : '');
+  const controlClass = (field, base) => (errorFor(field)
+    ? `${base} border-rose-500 focus:border-rose-500 focus:ring-rose-200`
+    : base);
 
-  const set = (k) => (e) => onChange?.(k, e.target.value);
+  const set = (key) => (e) => {
+    const value = e.target.value;
+    onChange?.(key, value);
+    if (key === 'pacienteTelefono') {
+      onChange?.('contactoTelefono1', value);
+    }
+  };
 
   const edadCalculada = useMemo(() => calculateAgeYears(v.pacienteNacimiento), [v.pacienteNacimiento]);
 
@@ -167,7 +179,7 @@ export default function StepPaciente({
 
               <textarea
 
-                className="rounded-xl border border-slate-300 px-3 py-2 min-h-[88px] text-sm"
+                className={controlClass(field.name, 'rounded-xl border border-slate-300 px-3 py-2 min-h-[88px] text-sm')}
 
                 value={v[field.name] || ''}
 
@@ -175,11 +187,19 @@ export default function StepPaciente({
 
                 placeholder={field.placeholder}
 
+                aria-invalid={errorFor(field.name) ? 'true' : undefined}
+
               />
 
               {field.helper ? (
 
                 <span className="text-[11px] text-slate-400">{field.helper}</span>
+
+              ) : null}
+
+              {errorFor(field.name) ? (
+
+                <span className="text-[11px] text-rose-600">{errorFor(field.name)}</span>
 
               ) : null}
 
@@ -222,34 +242,64 @@ export default function StepPaciente({
         <section className="grid gap-4">
           <h2 className="text-sm font-semibold text-slate-700">Datos de identificación</h2>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="required flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Nombre</span>
-              <input required className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteNombre || ''} onChange={set('pacienteNombre')} placeholder="Nombre(s)" />
-            </label>
-            <label className="required flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Apellido</span>
-              <input required className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteApellido || ''} onChange={set('pacienteApellido')} placeholder="Apellido(s)" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Nº HC / AG</span>
-              <input className="rounded-xl border border-slate-300 px-3 py-2 uppercase" value={v.agNumber || ''} onChange={(e) => onChange?.('agNumber', e.target.value.toUpperCase())} placeholder="AG-0001" />
-            </label>
-          </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="required flex flex-col gap-1">
+                <span className="text-xs text-slate-500">Nombre</span>
+                <input
+                  required
+                  className={controlClass('pacienteNombre', 'rounded-xl border border-slate-300 px-3 py-2')}
+                  value={v.pacienteNombre || ''}
+                  onChange={set('pacienteNombre')}
+                  placeholder="Nombre(s)"
+                  aria-invalid={errorFor('pacienteNombre') ? 'true' : undefined}
+                />
+                {errorFor('pacienteNombre') ? (
+                  <span className="text-[11px] text-rose-600">{errorFor('pacienteNombre')}</span>
+                ) : null}
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-500">Apellido</span>
+                <input className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteApellido || ''} onChange={set('pacienteApellido')} placeholder="Apellido(s)" />
+              </label>
+              <label className="required flex flex-col gap-1">
+                <span className="text-xs text-slate-500">Nº HC / AG</span>
+                <input
+                  required
+                  className={controlClass('agNumber', 'rounded-xl border border-slate-300 px-3 py-2 uppercase')}
+                  value={v.agNumber || ''}
+                  onChange={(e) => onChange?.('agNumber', e.target.value.toUpperCase())}
+                  placeholder="AG-0001"
+                  aria-invalid={errorFor('agNumber') ? 'true' : undefined}
+                />
+                {errorFor('agNumber') ? (
+                  <span className="text-[11px] text-rose-600">{errorFor('agNumber')}</span>
+                ) : null}
+              </label>
+            </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="required flex flex-col gap-1">
-              <span className="text-xs text-slate-500">DNI</span>
-              <input required className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteDni || ''} onChange={set('pacienteDni')} placeholder="Documento" />
-            </label>
-            <label className="required flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Fecha de nacimiento</span>
-              <input required type="date" className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteNacimiento || ''} onChange={set('pacienteNacimiento')} />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Sexo / Identidad</span>
-              <select className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteSexo || ''} onChange={set('pacienteSexo')}>
-                <option value="">Seleccionar…</option>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="required flex flex-col gap-1">
+                <span className="text-xs text-slate-500">DNI</span>
+                <input
+                  required
+                  className={controlClass('pacienteDni', 'rounded-xl border border-slate-300 px-3 py-2')}
+                  value={v.pacienteDni || ''}
+                  onChange={set('pacienteDni')}
+                  placeholder="Documento"
+                  aria-invalid={errorFor('pacienteDni') ? 'true' : undefined}
+                />
+                {errorFor('pacienteDni') ? (
+                  <span className="text-[11px] text-rose-600">{errorFor('pacienteDni')}</span>
+                ) : null}
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-500">Fecha de nacimiento</span>
+                <input type="date" className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteNacimiento || ''} onChange={set('pacienteNacimiento')} />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-500">Sexo / Identidad</span>
+                <select className="rounded-xl border border-slate-300 px-3 py-2" value={v.pacienteSexo || ''} onChange={set('pacienteSexo')}>
+                  <option value="">Seleccionar…</option>
                 <option value="F">Femenino</option>
                 <option value="M">Masculino</option>
                 <option value="X">No binario / Intersex / Prefiere no decir</option>
@@ -260,7 +310,16 @@ export default function StepPaciente({
           <div className="grid gap-3 md:grid-cols-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Fecha de consulta</span>
-              <input type="date" className="rounded-xl border border-slate-300 px-3 py-2" value={v.consultaFecha || ''} onChange={set('consultaFecha')} />
+              <input
+                type="date"
+                className={controlClass('consultaFecha', 'rounded-xl border border-slate-300 px-3 py-2')}
+                value={v.consultaFecha || ''}
+                onChange={set('consultaFecha')}
+                aria-invalid={errorFor('consultaFecha') ? 'true' : undefined}
+              />
+              {errorFor('consultaFecha') ? (
+                <span className="text-[11px] text-rose-600">{errorFor('consultaFecha')}</span>
+              ) : null}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Escolaridad actual</span>

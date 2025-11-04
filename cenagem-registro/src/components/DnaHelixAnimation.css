@@ -1,0 +1,81 @@
+/* DnaHelixAnimation.css */
+.dna-container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dna-helix {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100px; /* Width of the helix */
+  height: 400px; /* Height of the helix */
+  transform-style: preserve-3d;
+  transform: translate(-50%, -50%) rotateX(15deg) rotateY(0deg);
+  animation: helix-rotate 20s infinite linear;
+}
+
+.dna-strand {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.dna-strand::before,
+.dna-strand::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  width: 4px; /* Thickness of the strand */
+  height: 100%;
+  background-color: #4CAF50; /* Green color for DNA */
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+}
+
+.dna-strand::before {
+  transform: translateX(-50%) rotateY(0deg);
+  transform-origin: center center;
+}
+
+.dna-strand::after {
+  transform: translateX(-50%) rotateY(180deg);
+  transform-origin: center center;
+}
+
+/* Create the helical shape */
+.dna-strand:nth-child(1) { transform: rotateY(0deg); }
+.dna-strand:nth-child(2) { transform: rotateY(30deg); }
+.dna-strand:nth-child(3) { transform: rotateY(60deg); }
+.dna-strand:nth-child(4) { transform: rotateY(90deg); }
+.dna-strand:nth-child(5) { transform: rotateY(120deg); }
+.dna-strand:nth-child(6) { transform: rotateY(150deg); }
+.dna-strand:nth-child(7) { transform: rotateY(180deg); }
+.dna-strand:nth-child(8) { transform: rotateY(210deg); }
+.dna-strand:nth-child(9) { transform: rotateY(240deg); }
+.dna-strand:nth-child(10) { transform: rotateY(270deg); }
+.dna-strand:nth-child(11) { transform: rotateY(300deg); }
+.dna-strand:nth-child(12) { transform: rotateY(330deg); }
+
+
+@keyframes helix-rotate {
+  from { transform: translate(-50%, -50%) rotateX(15deg) rotateY(0deg); }
+  to { transform: translate(-50%, -50%) rotateX(15deg) rotateY(360deg); }
+}
+
+/* Add some subtle floating animation for the helix */
+@keyframes float {
+  0% { transform: translate(-50%, -50%) rotateX(15deg) rotateY(0deg) translateY(0px); }
+  50% { transform: translate(-50%, -50%) rotateX(15deg) rotateY(180deg) translateY(-20px); }
+  100% { transform: translate(-50%, -50%) rotateX(15deg) rotateY(360deg) translateY(0px); }
+}
+
+.dna-helix {
+  animation: helix-rotate 20s infinite linear, float 10s infinite ease-in-out;
+}

@@ -6,6 +6,10 @@ export interface AccessTokenPayload {
   roles: string[];
   permissions: Permission[];
   sessionId: string;
+  scope?: 'standard' | 'upload-ticket';
+  ticketId?: string | null;
+  ticketFamilyId?: string | null;
+  ticketMemberId?: string | null;
   iat?: number;
   exp?: number;
 }

@@ -94,12 +94,14 @@ model User {
   passwordHash  String
   firstName     String
   lastName      String
+  licenseNumber String?
   status        UserStatus   @default(ACTIVE)
   lastLoginAt   DateTime?
   roles         UserRole[]
   sessions      Session[]
   auditLogs     AuditLog[]   @relation("AuditActor")
   uploadedFiles Attachment[] @relation("AttachmentUploader")
+  uploadTickets UploadTicket[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 }
@@ -314,6 +316,7 @@ model Family {
   appointments     Appointment[]
   studies          Study[]
   attachments      Attachment[]
+  uploadTickets    UploadTicket[]
   evolutions       MemberEvolution[]
 }
 
@@ -345,6 +348,7 @@ model FamilyMember {
   studies      Study[]
   evolutions   MemberEvolution[]
   Attachment   Attachment[]
+  uploadTickets UploadTicket[]
 
   @@index([familyId])
   @@index([initials])
@@ -359,6 +363,8 @@ model MemberEvolution {
   note        String
   recordedAt  DateTime @default(now())
   metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   family Family       @relation(fields: [familyId], references: [id], onDelete: Cascade)
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -442,4 +448,28 @@ model Attachment {
   @@index([studyId])
   @@index([createdAt])
   @@index([category])
+}
+
+model UploadTicket {
+  id           String   @id @default(uuid())
+  familyId     String
+  memberId     String?
+  createdById  String
+  secretHash   String
+  expiresAt    DateTime
+  usageCount   Int      @default(0)
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  family    Family       @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  member    FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  createdBy User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@index([memberId])
+  @@index([createdById])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }

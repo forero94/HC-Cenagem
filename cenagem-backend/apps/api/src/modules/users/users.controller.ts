@@ -108,15 +108,22 @@ export class UsersController {
     const permissions = Array.from(
       new Set(roleRelations.flatMap((relation) => relation.role.permissions)),
     );
+    const computedDisplayName = [user.firstName, user.lastName]
+      .filter((value) => typeof value === 'string' && value.trim().length > 0)
+      .join(' ')
+      .trim();
 
     return {
       id: user.id,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      displayName: computedDisplayName || user.email,
+      primaryRole: roleNames[0] ?? null,
       status: user.status,
       roles: roleNames,
       permissions,
+      licenseNumber: user.licenseNumber ?? null,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       lastLoginAt: user.lastLoginAt,

@@ -14,7 +14,7 @@ export declare class UsersService {
     private readonly prisma;
     private readonly userInclude;
     constructor(prisma: PrismaService);
-    findByEmailWithRoles(email: string): Prisma.Prisma__UserClient<({
+    findByEmail(email: string): Prisma.Prisma__UserClient<({
         roles: ({
             role: {
                 id: string;
@@ -33,10 +33,39 @@ export declare class UsersService {
     } & {
         id: string;
         createdAt: Date;
-        email: string;
         firstName: string;
         lastName: string;
+        licenseNumber: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
+        email: string;
+        passwordHash: string;
+        lastLoginAt: Date | null;
+        updatedAt: Date;
+    }) | null, null, import("@prisma/client/runtime/library").DefaultArgs, Prisma.PrismaClientOptions>;
+    findByUsername(username: string): Prisma.Prisma__UserClient<({
+        roles: ({
+            role: {
+                id: string;
+                createdAt: Date;
+                name: string;
+                updatedAt: Date;
+                description: string | null;
+                permissions: import(".prisma/client").$Enums.Permission[];
+            };
+        } & {
+            userId: string;
+            roleId: string;
+            assignedBy: string | null;
+            assignedAt: Date;
+        })[];
+    } & {
+        id: string;
+        createdAt: Date;
+        firstName: string;
+        lastName: string;
+        licenseNumber: string | null;
+        status: import(".prisma/client").$Enums.UserStatus;
+        email: string;
         passwordHash: string;
         lastLoginAt: Date | null;
         updatedAt: Date;
@@ -60,10 +89,11 @@ export declare class UsersService {
     } & {
         id: string;
         createdAt: Date;
-        email: string;
         firstName: string;
         lastName: string;
+        licenseNumber: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
+        email: string;
         passwordHash: string;
         lastLoginAt: Date | null;
         updatedAt: Date;

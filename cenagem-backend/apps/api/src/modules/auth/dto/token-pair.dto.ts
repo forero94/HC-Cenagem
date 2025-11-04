@@ -4,8 +4,8 @@ export class TokenPairDto {
   @ApiProperty()
   accessToken: string;
 
-  @ApiProperty()
-  refreshToken: string;
+  @ApiProperty({ nullable: true })
+  refreshToken: string | null;
 
   @ApiProperty()
   expiresIn: number;

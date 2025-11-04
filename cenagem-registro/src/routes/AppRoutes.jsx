@@ -9,23 +9,45 @@ const FamilyPage = React.lazy(() => import('@/routes/FamilyPage.jsx'));
 const FamilyStudiesPage = React.lazy(() => import('@/routes/FamilyStudiesPage.jsx'));
 const GeneticsPage = React.lazy(() => import('@/routes/GeneticsPage.jsx'));
 const PhotosPage = React.lazy(() => import('@/routes/PhotosPage.jsx'));
+const UsersPage = React.lazy(() => import('@/routes/UsersPage.jsx'));
+
+function parseLocationSegments(source) {
+  if (!source) return { segments: [], params: {} };
+  let value = source.trim();
+  if (!value) return { segments: [], params: {} };
+  value = value.replace(/^#/, '');
+  value = value.replace(/^\/+/, '');
+  if (value.startsWith('#')) {
+    value = value.replace(/^#\/?/, '');
+  }
+  if (!value) return { segments: [], params: {} };
+  const [pathPart, queryPart] = value.split('?');
+  const segments = pathPart ? pathPart.split('/').filter(Boolean) : [];
+  const params = {};
+  if (queryPart) {
+    const search = new URLSearchParams(queryPart);
+    for (const [key, val] of search.entries()) {
+      params[key] = val;
+    }
+  }
+  return { segments, params };
+}
 
 function parseHash() {
-  const hash = (window.location.hash || '').replace(/^#\/?/, '');
-  let segs = hash ? hash.split('/') : [];
+  let { segments, params } = parseLocationSegments(window.location.hash || '');
 
-  if (!segs.length) {
-    const path = (window.location.pathname || '').replace(/^\/+/, '');
-    if (path) segs = path.split('/');
+  if (!segments.length) {
+    ({ segments, params } = parseLocationSegments(window.location.pathname || ''));
   }
 
-  const [seg0, seg1, seg2] = segs;
-  if (seg0 === 'family' && seg1 && seg2 === 'studies') return { name: 'family-studies', familyId: seg1 };
-  if (seg0 === 'family' && seg1 && seg2 === 'genetics') return { name: 'family-genetics', familyId: seg1 };
-  if (seg0 === 'family' && seg1 && seg2 === 'photos') return { name: 'family-photos', familyId: seg1 };
-  if (seg0 === 'family' && seg1) return { name: 'family', familyId: seg1 };
-  if (seg0 === 'analytics') return { name: 'analytics' };
-  return { name: 'home' };
+  const [seg0, seg1, seg2] = segments;
+  if (seg0 === 'family' && seg1 && seg2 === 'studies') return { name: 'family-studies', familyId: seg1, params };
+  if (seg0 === 'family' && seg1 && seg2 === 'genetics') return { name: 'family-genetics', familyId: seg1, params };
+  if (seg0 === 'family' && seg1 && seg2 === 'photos') return { name: 'family-photos', familyId: seg1, params };
+  if (seg0 === 'family' && seg1) return { name: 'family', familyId: seg1, params };
+  if (seg0 === 'analytics') return { name: 'analytics', params };
+  if (seg0 === 'users') return { name: 'users', params };
+  return { name: 'home', params };
 }
 
 export default function AppRoutes({ user = { email: 'genetista@cenagem.gob.ar' }, onLogout = ()=>{} }) {
@@ -63,7 +85,7 @@ export default function AppRoutes({ user = { email: 'genetista@cenagem.gob.ar' }
   if (route.name === 'family-photos') {
     return (
       <Suspense fallback={<div className="p-6">Cargando fotos…</div>}>
-        <PhotosPage familyId={route.familyId} />
+        <PhotosPage familyId={route.familyId} initialMemberId={route.params?.member || ''} />
       </Suspense>
     );
   }
@@ -72,6 +94,20 @@ export default function AppRoutes({ user = { email: 'genetista@cenagem.gob.ar' }
     return (
       <Suspense fallback={<div className="p-6">Cargando familia…</div>}>
         <FamilyPage user={user} familyId={route.familyId} />
+      </Suspense>
+    );
+  }
+
+  if (route.name === 'users') {
+    return (
+      <Suspense fallback={<div className="p-6">Cargando usuarios…</div>}>
+        <UsersPage
+          user={user}
+          onLogout={onLogout}
+          onBack={() => {
+            window.location.hash = '';
+          }}
+        />
       </Suspense>
     );
   }

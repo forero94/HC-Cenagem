@@ -1,4 +1,5 @@
 import type { Response } from 'express';
+import { ActiveUserData } from '@common';
 import { AttachmentsService } from './attachments.service';
 import { ListAttachmentsQueryDto } from './dto/list-attachments.query';
 import { CreateAttachmentDto } from './dto/create-attachment.dto';
@@ -12,9 +13,9 @@ export declare class AttachmentsController {
             nextCursor?: string;
         };
     }>;
-    create(body: CreateAttachmentDto): Promise<import("./attachments.service").AttachmentDetailDto>;
+    create(body: CreateAttachmentDto, actor: ActiveUserData): Promise<import("./attachments.service").AttachmentDetailDto>;
     getById(attachmentId: string): Promise<import("./attachments.service").AttachmentDetailDto>;
-    download(attachmentId: string, res: Response): Promise<void>;
+    download(attachmentId: string, res: Response): Promise<Buffer>;
     update(attachmentId: string, body: UpdateAttachmentDto): Promise<import("./attachments.service").AttachmentDetailDto>;
     delete(attachmentId: string): Promise<{
         success: boolean;

@@ -19,17 +19,31 @@ let RolesGuard = class RolesGuard {
         this.reflector = reflector;
     }
     canActivate(context) {
-        const requiredRoles = this.reflector.getAllAndOverride(_common_1.ROLES_KEY, [context.getHandler(), context.getClass()]);
-        const requiredPermissions = this.reflector.getAllAndOverride(_common_1.PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
-        if (!requiredRoles && !requiredPermissions) {
+        const isPublic = this.reflector.getAllAndOverride(_common_1.IS_PUBLIC_KEY, [
+            context.getHandler(),
+            context.getClass(),
+        ]);
+        if (isPublic) {
             return true;
         }
+        const requiredRoles = this.reflector.getAllAndOverride(_common_1.ROLES_KEY, [context.getHandler(), context.getClass()]);
+        const requiredPermissions = this.reflector.getAllAndOverride(_common_1.PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
+        const uploadTicketAllowed = this.reflector.getAllAndOverride(_common_1.UPLOAD_TICKET_ALLOWED_KEY, [context.getHandler(), context.getClass()]);
         const request = context
             .switchToHttp()
             .getRequest();
         const user = request?.user;
         if (!user) {
             throw new common_1.UnauthorizedException();
+        }
+        if (user.scope === 'upload-ticket') {
+            if (!uploadTicketAllowed) {
+                throw new common_1.ForbiddenException('Este acceso sólo permite subir adjuntos específicos.');
+            }
+            return true;
+        }
+        if (!requiredRoles && !requiredPermissions) {
+            return true;
         }
         if (requiredRoles?.length) {
             const hasRole = requiredRoles.some((role) => user.roles.includes(role));

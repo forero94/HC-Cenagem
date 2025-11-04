@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.cenagem.gob.ar/schemas/case-wizard-messages.json",
+  "title": "CaseWizardValidationMessages",
+  "description": "Mensajes reutilizables para validaciones del wizard de casos clínicos.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agNumber": {
+      "type": "string",
+      "const": "Asigná un número de HC/AG"
+    },
+    "pacienteNombre": {
+      "type": "string",
+      "const": "Ingresá el nombre del paciente"
+    },
+    "pacienteDni": {
+      "type": "string",
+      "const": "Completá el DNI"
+    },
+    "motivoGroup": {
+      "type": "string",
+      "const": "Seleccioná el grupo del motivo de consulta"
+    },
+    "motivoDetail": {
+      "type": "string",
+      "const": "Elegí el motivo puntual dentro del grupo"
+    },
+    "motivoPaciente": {
+      "type": "string",
+      "const": "Escribí el relato del paciente para orientar la consulta"
+    },
+    "enfInicioContexto": {
+      "type": "string",
+      "const": "Describí el inicio y contexto del cuadro clínico"
+    },
+    "enfEvolucionActual": {
+      "type": "string",
+      "const": "Contá la evolución reciente del cuadro"
+    },
+    "enfManifestacionesClaves": {
+      "type": "string",
+      "const": "Detallá las manifestaciones principales del cuadro"
+    },
+    "consultaFecha": {
+      "type": "string",
+      "const": "Indicá la fecha de la consulta"
+    }
+  },
+  "required": [
+    "agNumber",
+    "pacienteNombre",
+    "pacienteDni",
+    "motivoGroup",
+    "motivoDetail",
+    "motivoPaciente",
+    "enfInicioContexto",
+    "enfEvolucionActual",
+    "enfManifestacionesClaves",
+    "consultaFecha"
+  ]
+}

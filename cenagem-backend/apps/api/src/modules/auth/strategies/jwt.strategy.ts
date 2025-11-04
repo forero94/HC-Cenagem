@@ -43,6 +43,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roles,
       permissions,
       sessionId: payload.sessionId,
+      scope: (payload.scope as 'standard' | 'upload-ticket') ?? 'standard',
+      uploadTicketId: payload.ticketId ?? null,
+      uploadTicketFamilyId: payload.ticketFamilyId ?? null,
+      uploadTicketMemberId: payload.ticketMemberId ?? null,
     };
   }
 }

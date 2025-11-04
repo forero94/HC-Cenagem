@@ -33,6 +33,70 @@ const GENETIC_DEFS = [
   { key: 'fragileX', label: 'X Frágil (FMR1)' },
 ];
 
+// Paleta cromática para tarjetas de estudios genéticos
+const STUDY_CARD_THEMES = [
+  {
+    accentBar: 'bg-cyan-500',
+    accentSoft: 'bg-cyan-50',
+    border: 'border-cyan-200',
+    badgeBg: 'bg-cyan-100',
+    badgeText: 'text-cyan-700',
+    chipBorder: 'border-cyan-200',
+    chipText: 'text-cyan-700',
+  },
+  {
+    accentBar: 'bg-lime-500',
+    accentSoft: 'bg-lime-50',
+    border: 'border-lime-200',
+    badgeBg: 'bg-lime-100',
+    badgeText: 'text-lime-700',
+    chipBorder: 'border-lime-200',
+    chipText: 'text-lime-700',
+  },
+  {
+    accentBar: 'bg-orange-500',
+    accentSoft: 'bg-orange-50',
+    border: 'border-orange-200',
+    badgeBg: 'bg-orange-100',
+    badgeText: 'text-orange-700',
+    chipBorder: 'border-orange-200',
+    chipText: 'text-orange-700',
+  },
+  {
+    accentBar: 'bg-purple-500',
+    accentSoft: 'bg-purple-50',
+    border: 'border-purple-200',
+    badgeBg: 'bg-purple-100',
+    badgeText: 'text-purple-700',
+    chipBorder: 'border-purple-200',
+    chipText: 'text-purple-700',
+  },
+  {
+    accentBar: 'bg-rose-500',
+    accentSoft: 'bg-rose-50',
+    border: 'border-rose-200',
+    badgeBg: 'bg-rose-100',
+    badgeText: 'text-rose-700',
+    chipBorder: 'border-rose-200',
+    chipText: 'text-rose-700',
+  },
+  {
+    accentBar: 'bg-indigo-500',
+    accentSoft: 'bg-indigo-50',
+    border: 'border-indigo-200',
+    badgeBg: 'bg-indigo-100',
+    badgeText: 'text-indigo-700',
+    chipBorder: 'border-indigo-200',
+    chipText: 'text-indigo-700',
+  },
+];
+
+const themeForStudyType = (tipo) => {
+  const normalized = (tipo || 'otros').toString().toLowerCase();
+  const sum = Array.from(normalized).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return STUDY_CARD_THEMES[sum % STUDY_CARD_THEMES.length];
+};
+
 function useFamilyGenetics(familyId) {
   const {
     state,
@@ -424,17 +488,17 @@ export default function GeneticsPage({ familyId, inline = false }) {
     : '';
 
   return (
-    <div className={inline ? '' : 'p-6 grid gap-4'}>
+    <div className={inline ? '' : 'app-shell p-6 grid gap-4'}>
       {!inline && (
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between text-white">
           <button
             type="button"
             onClick={goBack}
-            className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+            className="px-3 py-2 rounded-xl border border-white/40 text-white hover:bg-white/10 transition"
           >
             ← Volver
           </button>
-          <h2 className="text-lg font-semibold">HC {family.code} · Estudios genéticos</h2>
+          <h2 className="text-lg font-semibold text-white">HC {family.code} · Estudios genéticos</h2>
           <div />
         </div>
       )}
@@ -496,43 +560,67 @@ export default function GeneticsPage({ familyId, inline = false }) {
               {filteredStudies.map((study) => {
                 const member = members.find((item) => item.id === study.memberId) || null;
                 const relatedAttachments = attachmentsByStudy.get(study.id) || [];
+                const memberLabel = member
+                  ? `${member.filiatorios?.iniciales || member.rol || '—'} · ${member.nombre || '—'}`
+                  : 'Familia';
+                const theme = themeForStudyType(study.tipo);
                 return (
-                  <div
+                  <article
                     key={study.id}
-                    className="flex items-start justify-between rounded-xl border border-slate-200 px-3 py-2"
+                    className={`relative overflow-hidden rounded-2xl border ${theme.border} bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg`}
                   >
-                    <div className="text-sm">
-                      <div>
-                        <b>{study.tipo}</b> · {study.nombre || '—'}
+                    <div className={`absolute inset-x-0 top-0 h-1 ${theme.accentBar}`} aria-hidden="true" />
+                    <div className="grid gap-3 px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="grid gap-1 text-sm">
+                          <span
+                            className={`inline-flex items-center gap-1 self-start rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${theme.badgeBg} ${theme.badgeText}`}
+                          >
+                            {study.tipo || 'Estudio'}
+                          </span>
+                          <div className="text-base font-semibold text-slate-900">
+                            {study.nombre || '—'}
+                          </div>
+                          <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                            <span>Fecha: {fmtDate(study.fecha)}</span>
+                            <span>Paciente: {memberLabel}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteStudy(study.id)}
+                          className="rounded-full border border-transparent p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                          title="Eliminar estudio"
+                          aria-label="Eliminar estudio"
+                        >
+                          <span aria-hidden="true">🗑</span>
+                        </button>
                       </div>
-                      <div className="text-slate-600">
-                        {fmtDate(study.fecha)} · {member?.filiatorios?.iniciales || member?.rol || 'familia'}
-                        {study.resultado ? ` · ${study.resultado}` : ''}
-                      </div>
+
+                      {study.resultado && (
+                        <div
+                          className={`rounded-xl px-3 py-2 text-sm leading-relaxed text-slate-700 ${theme.accentSoft}`}
+                        >
+                          {study.resultado}
+                        </div>
+                      )}
+
                       {relatedAttachments.length > 0 && (
-                        <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                        <div className="flex flex-wrap gap-2">
                           {relatedAttachments.map((attachment) => (
                             <button
                               key={attachment.id}
                               type="button"
                               onClick={() => void handleDownloadAttachment(attachment)}
-                              className="text-left text-blue-600 underline"
+                              className={`inline-flex items-center gap-1 rounded-full border bg-white px-3 py-1.5 text-xs font-medium transition hover:bg-slate-50 ${theme.chipBorder} ${theme.chipText}`}
                             >
-                              Descargar {attachment.fileName || attachment.description || 'adjunto'}
+                              {attachment.fileName || attachment.description || 'Adjunto'}
                             </button>
                           ))}
                         </div>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteStudy(study.id)}
-                      className="rounded-xl border border-slate-300 px-3 py-1.5 hover:bg-red-50"
-                      title="Eliminar estudio"
-                    >
-                      🗑
-                    </button>
-                  </div>
+                  </article>
                 );
               })}
             </div>

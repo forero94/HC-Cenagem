@@ -1,12 +1,19 @@
 // src/components/NewCase/StepMotivo.jsx
 import React, { useMemo } from 'react';
 
-export default function StepMotivo({ grupos, value, onChange }) {
+export default function StepMotivo({ grupos, value, onChange, errors = {} }) {
   const current = useMemo(
     () => grupos.find((g) => g.id === value.motivoGroup),
     [grupos, value.motivoGroup],
   );
   const details = current?.options ?? [];
+  const fieldErrors = errors || {};
+  const errorFor = (field) =>
+    typeof fieldErrors[field] === 'string' ? fieldErrors[field] : '';
+  const controlClass = (field, base) =>
+    errorFor(field)
+      ? `${base} border-rose-500 focus:border-rose-500 focus:ring-rose-200`
+      : base;
 
   return (
     <section className="grid gap-4">
@@ -19,14 +26,14 @@ export default function StepMotivo({ grupos, value, onChange }) {
       </header>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <label className="required flex flex-col gap-1">
+        <label className="flex flex-col gap-1">
           <span className="text-xs text-slate-500">Grupo</span>
           <select
-            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            className={controlClass('motivoGroup', 'rounded-xl border border-slate-300 px-3 py-2 text-sm')}
             aria-label="Grupo principal del motivo de consulta"
             value={value.motivoGroup}
             onChange={(e) => onChange({ motivoGroup: e.target.value, motivoDetail: '' })}
-            required
+            aria-invalid={errorFor('motivoGroup') ? 'true' : undefined}
           >
             <option value="">Seleccioná el grupo</option>
             {grupos.map((g) => (
@@ -35,16 +42,19 @@ export default function StepMotivo({ grupos, value, onChange }) {
               </option>
             ))}
           </select>
+          {errorFor('motivoGroup') ? (
+            <span className="text-[11px] text-rose-600">{errorFor('motivoGroup')}</span>
+          ) : null}
         </label>
-        <label className={`${current ? 'required ' : ''}md:col-span-2 flex flex-col gap-1`}>
+        <label className="md:col-span-2 flex flex-col gap-1">
           <span className="text-xs text-slate-500">Detalle</span>
           <select
-            className="rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+            className={controlClass('motivoDetail', 'rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400')}
             aria-label="Motivo puntual de la consulta"
             value={value.motivoDetail}
             onChange={(e) => onChange({ motivoDetail: e.target.value })}
             disabled={!current}
-            required={Boolean(current)}
+            aria-invalid={errorFor('motivoDetail') ? 'true' : undefined}
           >
             <option value="">
               {current ? 'Elegí el motivo puntual dentro del grupo' : 'Primero seleccioná el grupo'}
@@ -55,6 +65,9 @@ export default function StepMotivo({ grupos, value, onChange }) {
               </option>
             ))}
           </select>
+          {errorFor('motivoDetail') ? (
+            <span className="text-[11px] text-rose-600">{errorFor('motivoDetail')}</span>
+          ) : null}
         </label>
       </div>
 
@@ -68,11 +81,15 @@ export default function StepMotivo({ grupos, value, onChange }) {
         <label className="flex flex-col gap-1">
           <span className="text-xs text-slate-500">Relato del paciente</span>
           <textarea
-            className="rounded-xl border border-slate-300 px-3 py-2 min-h-[88px] text-sm"
+            className={controlClass('motivoPaciente', 'rounded-xl border border-slate-300 px-3 py-2 min-h-[88px] text-sm')}
             placeholder="Ej.: Consulta por retraso madurativo con dificultades en el lenguaje desde los 3 años."
             value={value.motivoPaciente || ''}
             onChange={(e) => onChange({ motivoPaciente: e.target.value })}
+            aria-invalid={errorFor('motivoPaciente') ? 'true' : undefined}
           />
+          {errorFor('motivoPaciente') ? (
+            <span className="text-[11px] text-rose-600">{errorFor('motivoPaciente')}</span>
+          ) : null}
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-slate-500">Motivo de derivación</span>

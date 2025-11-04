@@ -162,7 +162,8 @@ async function request(path, options = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  if (authTokens?.accessToken) {
+  const publicPaths = ['/auth/login', '/auth/refresh', '/auth/upload-ticket'];
+  if (authTokens?.accessToken && !publicPaths.includes(path)) {
     headers.set('Authorization', `Bearer ${authTokens.accessToken}`);
   }
 
@@ -261,6 +262,30 @@ export const cenagemApi = {
   },
   getCurrentUser() {
     return request('/users/me');
+  },
+  listUsers() {
+    return request('/users');
+  },
+  createUser(payload) {
+    return request('/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  updateUserStatus(userId, status) {
+    return request(`/users/${userId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  },
+  updateUserRoles(userId, roles) {
+    return request(`/users/${userId}/roles`, {
+      method: 'PATCH',
+      body: JSON.stringify({ roles }),
+    });
+  },
+  listRoles() {
+    return request('/roles');
   },
   listFamilies(params = {}) {
     return request(`/families${buildQuery(params)}`);
@@ -394,6 +419,18 @@ export const cenagemApi = {
     return request(`/families/${familyId}/attachments`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+  createUploadTicket(familyId, payload = {}) {
+    return request(`/families/${familyId}/attachments/upload-ticket`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  loginWithUploadTicket(ticket) {
+    return request('/auth/upload-ticket', {
+      method: 'POST',
+      body: JSON.stringify({ ticket }),
     });
   },
   updateAttachment(attachmentId, payload) {

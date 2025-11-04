@@ -51,22 +51,25 @@ const database_1 = require("../../../../../dist/libs/infrastructure/database");
 const argon2 = __importStar(require("argon2"));
 const crypto_1 = require("crypto");
 const audit_service_1 = require("../audit/audit.service");
+const upload_tickets_service_1 = require("../attachments/upload-tickets.service");
 const users_service_1 = require("../users/users.service");
 let AuthService = class AuthService {
     prisma;
     usersService;
     jwtService;
     configService;
+    uploadTickets;
     auditService;
-    constructor(prisma, usersService, jwtService, configService, auditService) {
+    constructor(prisma, usersService, jwtService, configService, uploadTickets, auditService) {
         this.prisma = prisma;
         this.usersService = usersService;
         this.jwtService = jwtService;
         this.configService = configService;
+        this.uploadTickets = uploadTickets;
         this.auditService = auditService;
     }
     async login(credentials, context) {
-        const user = await this.usersService.findByEmailWithRoles(credentials.email);
+        const user = await this.usersService.findByUsername(credentials.username);
         if (!user || user.status !== client_1.UserStatus.ACTIVE) {
             throw new common_1.UnauthorizedException('Credenciales inválidas.');
         }
@@ -76,6 +79,9 @@ let AuthService = class AuthService {
         }
         const sessionId = (0, crypto_1.randomUUID)();
         const tokenPair = await this.generateTokenPair(user, sessionId);
+        if (!tokenPair.refreshToken) {
+            throw new Error('Token de refresco no disponible.');
+        }
         await this.persistSession(sessionId, user.id, tokenPair.refreshToken, context);
         await this.usersService.updateLastLogin(user.id);
         await this.auditService.log(user.id, 'auth.login', 'user', user.id, {
@@ -115,12 +121,79 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('Usuario inactivo.');
         }
         const tokenPair = await this.generateTokenPair(user, session.id);
+        if (!tokenPair.refreshToken) {
+            throw new Error('Token de refresco no disponible.');
+        }
         await this.replaceSessionRefreshToken(session.id, tokenPair.refreshToken, context);
         await this.auditService.log(user.id, 'auth.refresh', 'session', session.id, {
             ip: this.normalizeIp(context.ip),
             userAgent: context.userAgent,
         });
         return tokenPair;
+    }
+    async exchangeUploadTicket(ticketValue, context) {
+        const { ticket, familyCode, familyDisplayName, memberLabel, members } = await this.uploadTickets.consume(ticketValue);
+        const user = await this.usersService.findByIdWithRoles(ticket.createdById);
+        if (!user || user.status !== client_1.UserStatus.ACTIVE) {
+            throw new common_1.UnauthorizedException('El ticket no es válido.');
+        }
+        const roleNames = user.roles.map((relation) => relation.role.name);
+        const displayName = [user.firstName, user.lastName]
+            .filter((value) => typeof value === 'string' && value.trim().length > 0)
+            .join(' ')
+            .trim();
+        const primaryRole = roleNames[0] ?? null;
+        const licenseNumber = user.licenseNumber ?? null;
+        const accessPayload = {
+            sub: user.id,
+            email: user.email,
+            roles: [],
+            permissions: [],
+            sessionId: `ticket:${ticket.id}`,
+            scope: 'upload-ticket',
+            ticketId: ticket.id,
+            ticketFamilyId: ticket.familyId,
+            ticketMemberId: ticket.memberId ?? null,
+        };
+        const accessToken = await this.jwtService.signAsync(accessPayload, {
+            expiresIn: this.uploadTicketAccessTokenTtl,
+        });
+        const accessDecoded = this.decodeToken(accessToken);
+        const tokens = {
+            accessToken,
+            refreshToken: null,
+            expiresIn: this.secondsUntil(accessDecoded?.exp),
+            refreshExpiresIn: 0,
+        };
+        await this.auditService.log(user.id, 'auth.uploadTicket.login', 'uploadTicket', ticket.id, {
+            familyId: ticket.familyId,
+            memberId: ticket.memberId,
+            ip: this.normalizeIp(context.ip),
+            userAgent: context.userAgent,
+        });
+        return {
+            tokens,
+            user: {
+                id: user.id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                displayName: displayName || user.email,
+                primaryRole,
+                licenseNumber,
+                scope: 'upload-ticket',
+            },
+            ticket: {
+                id: ticket.id,
+                familyId: ticket.familyId,
+                memberId: ticket.memberId ?? null,
+                expiresAt: ticket.expiresAt,
+                familyCode,
+                familyDisplayName: familyDisplayName ?? null,
+                memberLabel: memberLabel ?? null,
+                members,
+            },
+        };
     }
     async logout(userId, sessionId) {
         const result = await this.prisma.session.updateMany({
@@ -162,6 +235,10 @@ let AuthService = class AuthService {
             roles,
             permissions,
             sessionId,
+            scope: 'standard',
+            ticketId: null,
+            ticketFamilyId: null,
+            ticketMemberId: null,
         };
         const accessToken = await this.jwtService.signAsync(accessPayload, {
             expiresIn: this.accessTokenTtl,
@@ -240,6 +317,10 @@ let AuthService = class AuthService {
         return (this.configService.get('auth.access.expiresIn') ??
             '15m');
     }
+    get uploadTicketAccessTokenTtl() {
+        return (this.configService.get('auth.uploadTicket.expiresIn') ??
+            '10m');
+    }
     get refreshTokenTtl() {
         return (this.configService.get('auth.refresh.expiresIn') ??
             '7d');
@@ -263,6 +344,7 @@ exports.AuthService = AuthService = __decorate([
         users_service_1.UsersService,
         jwt_1.JwtService,
         config_1.ConfigService,
+        upload_tickets_service_1.UploadTicketsService,
         audit_service_1.AuditService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

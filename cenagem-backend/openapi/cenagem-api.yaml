@@ -571,3 +571,5 @@ components:
     AttachmentUpdateInput:
       allOf:
         - $ref: "#/components/schemas/AttachmentCreateInput"
+    CaseWizardFlat:
+      $ref: "./case-wizard.schema.json"

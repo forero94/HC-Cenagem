@@ -7,16 +7,16 @@ import LoginView from './modules/auth/LoginView';
 import { getUser, logout } from './modules/auth/useAuth';
 import AppRoutes from './routes/AppRoutes';
 export default function App(){
-  const [user, setUser] = useState(getUser());
   return (
-    <AuthGate fallback={<LoginView onLogin={(u)=>setUser(u)} /> }>
-      <AppRoutes
-        user={user}
-        onLogout={async () => {
-          setUser(null);
-          await logout();
-        }}
-      />
+    <AuthGate
+      fallback={<LoginView />}
+    >
+      {({ user, onLogout }) => (
+        <AppRoutes
+          user={user}
+          onLogout={onLogout}
+        />
+      )}
     </AuthGate>
   );
 }

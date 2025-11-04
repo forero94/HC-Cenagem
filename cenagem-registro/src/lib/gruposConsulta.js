@@ -68,20 +68,16 @@ export const GRUPOS_CONSULTA = [
       { id: 'hallazgo_incidental', label: 'Hallazgo incidental en estudios' },
     ],
   },
-  // 1) Agregar en GRUPOS_CONSULTA:
-{
-  id: 'monogenica',
-  label: '8. Sospecha de enfermedad monogénica',
-  options: [
-    { id: 'fenotipo_especifico', label: 'Fenotipo clínico característico' },
-    { id: 'hallazgos_bioquimicos', label: 'Hallazgos bioquímicos sugerentes' },
-    { id: 'entidad_concreta', label: 'Entidad concreta sospechada (p. ej., FQ, distrofia, hemocromatosis)' },
-    { id: 'organo_sistema', label: 'Afectación predominante de órgano/sistema' },
-  ],
-},
-
-// 2) En BASE_SECCIONES_VISIBLES:
-
+  {
+    id: 'monogenica',
+    label: '8. Sospecha de enfermedad monogénica',
+    options: [
+      { id: 'fenotipo_especifico', label: 'Fenotipo clínico característico' },
+      { id: 'hallazgos_bioquimicos', label: 'Hallazgos bioquímicos sugerentes' },
+      { id: 'entidad_concreta', label: 'Entidad concreta sospechada (p. ej., FQ, distrofia, hemocromatosis)' },
+      { id: 'organo_sistema', label: 'Afectación predominante de órgano/sistema' },
+    ],
+  },
 ];
 
 // Campos visibles por grupo (base). El Paso 3 añade sus propios campos específicos.

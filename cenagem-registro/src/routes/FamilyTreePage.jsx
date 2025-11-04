@@ -1,749 +1,761 @@
-// ===============================
-// src/routes/FamilyTreePage.jsx — Editor visual de pedigrí NSGC 2008
-// Orquesta: motor (core), layout y componentes de UI.
-// ===============================
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
+import { cenagemApi } from '@/lib/apiClient';
+import { getUser } from '@/modules/auth/useAuth';
+import { useCenagemStore } from '@/store/cenagemStore';
 
-import usePedigreeWorkspace from '../hooks/usePedigreeWorkspace';
-import useInitialSelection from '../hooks/useInitialSelection';
-import useMembersForLayout from '../hooks/useMembersForLayout';
-import usePedigree from '../hooks/usePedigree';
-import useCouples from '../hooks/useCouples';
-import useSides from '../hooks/useSides';
-import useChildLines from '../hooks/useChildLines';
-import useGridLayout from '../hooks/useGridLayout';
-import useViewport from '../hooks/useViewport';
+const TREE_CATEGORY = 'TREE'; // New category for tree photos
+const AUTO_REFRESH_INTERVAL_MS = 15_000;
 
-import TreeTopbar from '../components/TreeTopbar';
-import TreeToolbar from '../components/TreeToolbar';
-import PedigreeCanvas from '../components/PedigreeCanvas';
-import MemberSidebar from '../components/MemberSidebar';
-import PedigreePalette from '../components/PedigreePalette';
-import ValidationPanel from '../components/ValidationPanel';
+// --- Image compression utilities (copied from PhotosPage.jsx) ---
+const MAX_IMAGE_BYTES = 2.5 * 1024 * 1024; // 2.5 MB límite objetivo por imagen
+const MAX_IMAGE_DIMENSION = 1920;
+const JPEG_QUALITY_STEPS = [0.82, 0.72, 0.62, 0.52];
 
-export default function FamilyTreePage({ familyId, inline = false }) {
-  const {
-    fam,
-    engine,
-    engineState,
-    legendUsage,
-    individualsById,
-    validationSummary,
-    actions,
-  } = usePedigreeWorkspace(familyId);
+const formatDateTime = (iso) => {
+  if (!iso) return '—';
+  try {
+    const value = new Date(iso);
+    return value.toLocaleString('es-AR');
+  } catch (error) {
+    console.warn('No se pudo formatear la fecha de la foto del árbol', error);
+    return iso;
+  }
+};
 
-  // Estado local de selección y modo de vista (foco / todo)
-  const [selectedId, setSelectedId] = useState('');
-  const [viewMode, setViewMode] = useState('todo');
-  const [showValidation, setShowValidation] = useState(false);
-  const [relationMenu, setRelationMenu] = useState(null);
-
-  const metadata = engineState.metadata || {};
-  const displayById = useMemo(
-    () => buildDisplayById(engineState.individuals || [], metadata),
-    [engineState.individuals, metadata],
-  );
-
-  const membersForHooks = useMemo(
-    () => buildMembersForHooks(displayById),
-    [displayById],
-  );
-
-  // Selección inicial (proband o primer miembro)
-  useInitialSelection(membersForHooks, selectedId, setSelectedId);
-
-  // Mapas de parentesco para layout
-  const pedigreeMap = useMemo(
-    () => relationshipsToPedigreeMap(engineState.relationships || []),
-    [engineState.relationships],
-  );
-
-  const {
-    proband,
-    parentsMap: parentsMapFull,
-    generations,
-  } = usePedigree(membersForHooks, pedigreeMap);
-
-  const couples = useCouples(pedigreeMap, membersForHooks, engineState.relationships);
-  const sideMap = useSides({ proband, parentsMap: parentsMapFull });
-
-  const membersForLayout = useMembersForLayout({
-    viewMode,
-    proband,
-    parentsMap: parentsMapFull,
-    mergedMembers: membersForHooks,
-    mergedPedigree: pedigreeMap,
-    maxDepth: 6,
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('No se pudo leer el archivo'));
+    };
+    reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(file);
   });
 
-  const partnerMap = useMemo(
-    () => buildPartnerMap(engineState.relationships, engineState.individuals),
-    [engineState.relationships, engineState.individuals],
-  );
+const blobToDataUrl = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('No se pudo generar la imagen comprimida'));
+    };
+    reader.onerror = () =>
+      reject(reader.error || new Error('No se pudo generar la imagen comprimida'));
+    reader.readAsDataURL(blob);
+  });
 
-  const parentsMapForLayout = useMemo(() => {
-    if (!membersForLayout.length) return {};
-    const allowed = new Set(membersForLayout.map((member) => member.id));
-    const map = {};
-    Object.entries(parentsMapFull || {}).forEach(([childId, links]) => {
-      if (!allowed.has(childId)) return;
-      let padreId = links.padreId && allowed.has(links.padreId) ? links.padreId : '';
-      let madreId = links.madreId && allowed.has(links.madreId) ? links.madreId : '';
+const canvasToBlob = (canvas, type, quality) =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+        reject(new Error('No se pudo crear la imagen comprimida'));
+      },
+      type,
+      quality,
+    );
+  });
 
-      if ((padreId && !madreId) || (madreId && !padreId)) {
-        const knownParentId = padreId || madreId;
-        const candidates = Array.from(partnerMap.get(knownParentId) || []).filter(
-          (partnerId) => allowed.has(partnerId),
-        );
-        if (candidates.length === 1) {
-          const partnerId = candidates[0];
-          const hasDirectRelationship = (engineState.relationships || []).some(
-            (rel) =>
-              rel?.type === 'parentChild' &&
-              rel.child === childId &&
-              (rel.father === partnerId || rel.mother === partnerId),
-          );
-          if (hasDirectRelationship) {
-            const partnerSex = (individualsById.get(partnerId)?.sex || '').toUpperCase();
-            if (!padreId && partnerId !== madreId) {
-              if (partnerSex === 'M' || partnerSex === 'U' || partnerSex === '') {
-                padreId = partnerId;
-              } else if (!madreId) {
-                padreId = partnerId;
-              }
-            }
-            if (!madreId && partnerId !== padreId) {
-              if (partnerSex === 'F' || partnerSex === 'U' || partnerSex === '') {
-                madreId = partnerId;
-              } else if (!padreId) {
-                madreId = partnerId;
-              }
-            }
+const loadImageSource = async (file) => {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      return {
+        width: bitmap.width,
+        height: bitmap.height,
+        draw: (ctx, width, height) => ctx.drawImage(bitmap, 0, 0, width, height),
+        cleanup: () => {
+          if (typeof bitmap.close === 'function') {
+            bitmap.close();
+          }
+        },
+      };
+    } catch {
+      // Fallback to Image element below
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      resolve({
+        width,
+        height,
+        draw: (ctx, targetWidth, targetHeight) => ctx.drawImage(image, 0, 0, targetWidth, targetHeight),
+        cleanup: () => {},
+      });
+    };
+    image.onerror = (event) => {
+      URL.revokeObjectURL(url);
+      reject((event && event.error) || new Error('No se pudo cargar la imagen'));
+    };
+    image.src = url;
+  });
+};
+
+const compressImageIfNeeded = async (file) => {
+  if (!(file instanceof File) || !file.type.startsWith('image/')) {
+    return readFileAsDataUrl(file);
+  }
+
+  if (file.size <= MAX_IMAGE_BYTES) {
+    return readFileAsDataUrl(file);
+  }
+
+  try {
+    const source = await loadImageSource(file);
+    try {
+      const longestSide = Math.max(source.width, source.height);
+      const scale =
+        longestSide > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / longestSide : 1;
+      const targetWidth = Math.max(1, Math.round(source.width * scale));
+      const targetHeight = Math.max(1, Math.round(source.height * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('No se pudo preparar el lienzo para comprimir la imagen.');
+      }
+      ctx.imageSmoothingQuality = 'high';
+      source.draw(ctx, targetWidth, targetHeight);
+
+      let outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      let blob = await canvasToBlob(
+        canvas,
+        outputType,
+        outputType === 'image/jpeg' ? JPEG_QUALITY_STEPS[0] : undefined,
+      );
+
+      if (blob.size > MAX_IMAGE_BYTES && outputType === 'image/jpeg') {
+        for (const quality of JPEG_QUALITY_STEPS.slice(1)) {
+          const candidate = await canvasToBlob(canvas, outputType, quality);
+          if (candidate && candidate.size <= MAX_IMAGE_BYTES) {
+            blob = candidate;
+            break;
+          }
+          if (candidate && candidate.size < blob.size) {
+            blob = candidate;
           }
         }
       }
 
-      if (padreId || madreId) {
-        map[childId] = {
-          padreId,
-          madreId,
-          biological: links.biological,
-          adoptive: links.adoptive,
-        };
+      if (blob.size > MAX_IMAGE_BYTES && outputType === 'image/png') {
+        outputType = 'image/jpeg';
+        let jpegBlob = await canvasToBlob(canvas, outputType, JPEG_QUALITY_STEPS[0]);
+        if (jpegBlob) {
+          if (jpegBlob.size > MAX_IMAGE_BYTES) {
+            for (const quality of JPEG_QUALITY_STEPS.slice(1)) {
+              const candidate = await canvasToBlob(canvas, outputType, quality);
+              if (candidate && candidate.size <= MAX_IMAGE_BYTES) {
+                jpegBlob = candidate;
+                break;
+              }
+              if (candidate && candidate.size < jpegBlob.size) {
+                jpegBlob = candidate;
+              }
+            }
+          }
+          blob = jpegBlob;
+        }
       }
-    });
-    return map;
-  }, [membersForLayout, parentsMapFull, partnerMap, individualsById, engineState.relationships]);
 
-  const couplesForLayout = useMemo(() => {
-    if (!couples?.length) return [];
-    const allowed = new Set(membersForLayout.map((member) => member.id));
-    return couples.filter((couple) => allowed.has(couple.a) && allowed.has(couple.b));
-  }, [couples, membersForLayout]);
+      const dataUrl = await blobToDataUrl(blob);
+      return dataUrl;
+    } finally {
+      source.cleanup?.();
+    }
+  } catch (error) {
+    console.warn('No se pudo comprimir la imagen antes de subirla', error);
+    return readFileAsDataUrl(file);
+  }
+};
 
-  const relationshipMeta = useMemo(() => {
-    const meta = {};
-    (engineState.relationships || []).forEach((rel) => {
-      if (rel.type !== 'parentChild') return;
-      meta[rel.child] = {
-        biological: rel.biological !== false,
-        adoptive: rel.adoptive === true,
-      };
-    });
-    return meta;
-  }, [engineState.relationships]);
+const fileToBase64 = async (file) => {
+  const dataUrl = await compressImageIfNeeded(file);
+  if (typeof dataUrl !== 'string') {
+    throw new Error('No se pudo preparar la imagen para subirla');
+  }
+  return dataUrl.split(',').pop() || '';
+};
 
-  const layoutBase = useGridLayout({
-    members: membersForLayout,
-    generations,
-    couples: couplesForLayout,
-    sideMap,
-    parentsMap: parentsMapForLayout,
-  });
+function UploadTreePhotos({ disabled, onFiles }) {
+  const inputId = React.useId();
+  return (
+    <div className="grid gap-1">
+      <label
+        htmlFor={inputId}
+        className={`px-3 py-2 rounded-xl border ${
+          disabled
+            ? 'border-slate-200 text-slate-400'
+            : 'border-slate-300 hover:bg-slate-50 cursor-pointer'
+        } flex items-center justify-center gap-2`}
+      >
+        <span>➕ Agregar fotos del árbol</span>
+      </label>
+      <input
+        id={inputId}
+        type="file"
+        accept="image/*"
+        multiple
+        disabled={disabled}
+        className="hidden"
+        onChange={(event) => onFiles && onFiles(event.target.files)}
+      />
+      <div className="text-[11px] text-slate-500">
+        Las imágenes se adjuntan a la familia y quedan disponibles para todo el equipo.
+      </div>
+    </div>
+  );
+}
 
-  const childLines = useChildLines({
-    parentsMap: parentsMapForLayout,
-    pos: layoutBase.pos,
-    nodeR: layoutBase.nodeR,
-    relationshipMeta,
-  });
+function StandardFamilyTreePage({ familyId, inline = false }) {
+  const [ticketInfo, setTicketInfo] = useState(null);
+  const [ticketError, setTicketError] = useState(null);
+  const [ticketRefreshKey, setTicketRefreshKey] = useState(0);
+  const [ticketLoading, setTicketLoading] = useState(false);
+  const [ticketCountdown, setTicketCountdown] = useState('');
+  const qrCanvasRef = useRef(null);
 
-  const layout = useMemo(
-    () => ({ ...layoutBase, childLines }),
-    [layoutBase, childLines],
+  const {
+    state,
+    ensureFamilyDetail,
+    createAttachment,
+    deleteAttachment,
+    downloadAttachment,
+    listAttachmentsByFamily,
+  } = useCenagemStore();
+
+  useEffect(() => {
+    if (familyId) {
+      void ensureFamilyDetail(familyId, true);
+    }
+  }, [familyId, ensureFamilyDetail]);
+
+  useEffect(() => {
+    if (!familyId) return undefined;
+    if (typeof window === 'undefined') return undefined;
+
+    let cancelled = false;
+    const shouldRefresh = () =>
+      typeof document === 'undefined' || document.visibilityState === 'visible';
+
+    const refreshAttachments = async () => {
+      if (!familyId || cancelled || !shouldRefresh()) {
+        return;
+      }
+      try {
+        await listAttachmentsByFamily(familyId);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('No se pudo actualizar la galería de fotos automáticamente', error);
+        }
+      }
+    };
+
+    const handleVisibility = () => {
+      if (shouldRefresh()) {
+        void refreshAttachments();
+      }
+    };
+
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshAttachments();
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    void refreshAttachments();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    };
+  }, [familyId, listAttachmentsByFamily]);
+
+  const family = useMemo(
+    () => state.families.find((item) => item.id === familyId) || null,
+    [state.families, familyId],
   );
 
-  const findNearestNodeId = useMemo(() => {
-    const entries = Array.from(layout.pos.entries());
-    return (point, threshold = 60) => {
-      let bestId = null;
-      let minDist = Infinity;
-      entries.forEach(([id, coords]) => {
-        const dx = coords.x - point.x;
-        const dy = coords.y - point.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < minDist) {
-          minDist = dist;
-          bestId = id;
+  const treePhotos = useMemo(
+    () =>
+      state.attachments.filter(
+        (attachment) =>
+          attachment.familyId === familyId && attachment.category === TREE_CATEGORY,
+      ),
+    [state.attachments, familyId],
+  );
+
+  const sortedTreePhotos = useMemo(
+    () =>
+      [...treePhotos].sort((a, b) => {
+        const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      }),
+    [treePhotos],
+  );
+
+  const [previews, setPreviews] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      for (const photo of sortedTreePhotos) {
+        if (!photo?.id || previews[photo.id]) continue;
+        try {
+          let url;
+          let generated = false;
+          if (photo.base64Data) {
+            url = `data:${photo.contentType || 'image/*'};base64,${photo.base64Data}`;
+          } else {
+            const blob = await downloadAttachment(photo.id);
+            if (cancelled) return;
+            url = URL.createObjectURL(blob);
+            generated = true;
+          }
+
+          setPreviews((prev) => {
+            if (cancelled || prev[photo.id]) {
+              if (generated) URL.revokeObjectURL(url);
+              return prev;
+            }
+            return {
+              ...prev,
+              [photo.id]: { url, generated },
+            };
+          });
+        } catch (error) {
+          console.error('No se pudo obtener la imagen del árbol familiar', error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sortedTreePhotos, previews, downloadAttachment]);
+
+  useEffect(() => {
+    const validIds = new Set(sortedTreePhotos.map((photo) => String(photo.id)));
+    setPreviews((prev) => {
+      let changed = false;
+      const next = {};
+      for (const [id, value] of Object.entries(prev)) {
+        if (validIds.has(id)) {
+          next[id] = value;
+          continue;
+        }
+        changed = true;
+        if (value?.generated) {
+          URL.revokeObjectURL(value.url);
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [sortedTreePhotos]);
+
+  useEffect(
+    () => () => {
+      Object.values(previews).forEach((entry) => {
+        if (entry?.generated) {
+          URL.revokeObjectURL(entry.url);
         }
       });
-      return minDist <= threshold ? bestId : null;
-    };
-  }, [layout.pos]);
+    },
+    [previews],
+  );
 
-  const handleToolSelect = (tool) => {
-    if (!tool) return;
-    if (tool.type === 'individual') {
-      const newId = actions.createIndividual({ sex: tool.sex || 'U' });
-      setSelectedId(newId);
+  const fetchUploadTicket = useCallback(async () => {
+    if (!familyId) {
+      setTicketInfo(null);
+      setTicketError(null);
+      setTicketLoading(false);
       return;
     }
-    if (!selectedId) {
-      window.alert?.('Seleccioná un miembro para usar esta acción.');
-      return;
-    }
-    const selectedIndividual = individualsById.get(selectedId);
-    if (tool.type === 'add-parents') {
-      const existingParents = parentsMapFull[selectedId] || {};
-      if (existingParents.padreId || existingParents.madreId) {
-        window.alert?.('Este miembro ya tiene padres registrados.');
-        return;
-      }
-      actions.createParentsForChild(selectedId, { biological: true });
-      return;
-    }
-    if (tool.type === 'link-partner') {
-      const partnerSex =
-        selectedIndividual?.sex === 'M' ? 'F' : selectedIndividual?.sex === 'F' ? 'M' : 'U';
-      const partnerId = actions.createIndividual({ sex: partnerSex });
-      actions.linkPartner(selectedId, partnerId);
-      setSelectedId(partnerId);
-      return;
-    }
-    if (tool.type === 'link-child') {
-      const childId = actions.createIndividual({});
-      const partnerCandidates = Array.from(partnerMap.get(selectedId) || []);
-      const chosenPartnerId = partnerCandidates[0] || null;
-      const { fatherId, motherId } = resolveParentIds(individualsById, selectedId, chosenPartnerId);
-      const payload = {
-        child: childId,
-        biological: true,
-        father: fatherId || null,
-        mother: motherId || null,
-      };
-      if (!payload.father && !payload.mother) {
-        payload.father = selectedId;
-      }
-      actions.linkParentChild(payload);
-      setSelectedId(childId);
-      return;
-    }
-    if (tool.type === 'link-sibling') {
-      const parents = parentsMapFull[selectedId] || {};
-      if (!parents.padreId && !parents.madreId) {
-        window.alert?.('Asigná padres para poder agregar hermanos/as.');
-        return;
-      }
-      const siblingId = actions.createIndividual({});
-      actions.linkParentChild({
-        father: parents.padreId || null,
-        mother: parents.madreId || null,
-        child: siblingId,
-        biological: true,
+
+    setTicketLoading(true);
+    setTicketError(null);
+
+    try {
+      // For tree photos, the upload ticket is associated with the family, not a specific member
+      const response = await cenagemApi.createUploadTicket(familyId, {
+        category: TREE_CATEGORY,
       });
-      setSelectedId(siblingId);
+      setTicketInfo(response);
+    } catch (error) {
+      console.error('No se pudo generar el ticket de carga para el árbol familiar', error);
+      setTicketError('No se pudo generar el código QR. Intentá nuevamente.');
+      setTicketInfo(null);
+    } finally {
+      setTicketLoading(false);
     }
-  };
+  }, [familyId]);
 
-  const handleDropTool = (tool, point) => {
-    if (!tool) return;
-    if (tool.type === 'individual') {
-      const newId = actions.createIndividual({ sex: tool.sex || 'U' });
-      setSelectedId(newId);
-      return;
-    }
-    const targetId = findNearestNodeId(point);
-    if (!targetId) return;
-    const targetDisplay = displayById.get(targetId);
-    const existingParents = parentsMapFull[targetId] || {};
-
-    if (tool.type === 'link-partner') {
-      const partnerSex = targetDisplay?.shape === 'square' ? 'F' : targetDisplay?.shape === 'circle' ? 'M' : 'U';
-      const partnerId = actions.createIndividual({ sex: partnerSex });
-      actions.linkPartner(targetId, partnerId);
-      setSelectedId(partnerId);
-      return;
-    }
-    if (tool.type === 'add-parents') {
-      if (existingParents.padreId || existingParents.madreId) {
-        window.alert?.('Este miembro ya tiene padres registrados.');
-        return;
-      }
-      actions.createParentsForChild(targetId, { biological: true });
-      return;
-    }
-    if (tool.type === 'link-child') {
-      const childId = actions.createIndividual({});
-      const partnerCandidates = Array.from(partnerMap.get(targetId) || []);
-      const chosenPartnerId = partnerCandidates[0] || null;
-      const { fatherId, motherId } = resolveParentIds(individualsById, targetId, chosenPartnerId);
-      const payload = {
-        child: childId,
-        biological: true,
-        father: fatherId || null,
-        mother: motherId || null,
-      };
-      if (!payload.father && !payload.mother) {
-        payload.father = targetId;
-      }
-      actions.linkParentChild(payload);
-      setSelectedId(childId);
-      return;
-    }
-    if (tool.type === 'link-sibling') {
-      if (!existingParents.padreId && !existingParents.madreId) return;
-      const siblingId = actions.createIndividual({});
-      actions.linkParentChild({
-        father: existingParents.padreId || null,
-        mother: existingParents.madreId || null,
-        child: siblingId,
-        biological: true,
-      });
-      setSelectedId(siblingId);
-    }
-  };
-
-  const handlePartnerLineClick = ({ a, b, anchor }) => {
-    const relation =
-      engineState.relationships.find(
-        (rel) =>
-          rel.type === 'partner' &&
-          ((rel.a === a && rel.b === b) || (rel.a === b && rel.b === a)),
-      ) || { status: 'current', consanguinity: false };
-    setRelationMenu({
-      a,
-      b,
-      anchor,
-      status: relation.status || 'current',
-      consanguinity: !!relation.consanguinity,
-    });
-  };
-
-  const handleRelationMenuClose = () => setRelationMenu(null);
-
-  const handleRelationMenuChange = (patch) => {
-    setRelationMenu((prev) => (prev ? { ...prev, ...patch } : prev));
-    const current = relationMenu;
-    if (!current) return;
-    actions.updatePartnerRelationship(current.a, current.b, patch);
-  };
-
-  const handleExportJSON = () => {
-    const payload = engine?.toClinicalJSON ? engine.toClinicalJSON() : engineState;
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${fam?.code || 'pedigree'}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleExportPDF = () => {
-    const svgEl = vp.svgRef.current;
-    if (!svgEl) return;
-    const serializer = new XMLSerializer();
-    const svgMarkup = serializer.serializeToString(svgEl);
-    const legendMap = engineState.legend || {};
-    const legendList = legendUsage
-      .map((key) => `<li>${legendLabelFor(key, legendMap)}</li>`)
-      .join('');
-    const html = `<!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Pedigrí ${fam?.code || ''}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 24px; color: #1e293b; }
-          h1 { font-size: 20px; margin-bottom: 4px; }
-          h2 { font-size: 14px; margin-top: 24px; }
-          ul { margin: 0; padding-left: 20px; font-size: 12px; }
-          .meta { font-size: 12px; margin-bottom: 16px; color: #475569; }
-          .svg-wrapper { border: 1px solid #cbd5f5; padding: 12px; border-radius: 12px; margin-bottom: 16px; }
-        </style>
-      </head>
-      <body>
-        <h1>Pedigrí ${fam?.code || ''}</h1>
-        <div class="meta">
-          Motivo: ${metadata?.reason || '—'} · Registrado por: ${metadata?.recorder || '—'} · Historian: ${metadata?.historian || '—'}
-        </div>
-        <div class="svg-wrapper">${svgMarkup}</div>
-        <h2>Leyenda</h2>
-        <ul>${legendList}</ul>
-        <h2>Privacidad</h2>
-        <div class="meta">Nombres: ${metadata?.privacy?.names || 'initials'} · Fechas: ${metadata?.privacy?.dates || 'year-only'}</div>
-      </body>
-      </html>`;
-    const printWindow = window.open('', '_blank', 'noopener');
-    if (!printWindow) return;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-    }, 300);
-  };
-
-  const handleShowValidation = () => setShowValidation(true);
-
-  // Limpiar selección si el individuo ya no existe
   useEffect(() => {
-    if (selectedId && !displayById.has(selectedId)) {
-      setSelectedId('');
+    void fetchUploadTicket();
+  }, [fetchUploadTicket, ticketRefreshKey]);
+
+  useEffect(() => {
+    if (!ticketInfo?.expiresAt) {
+      setTicketCountdown('');
+      return undefined;
     }
-  }, [selectedId, displayById]);
 
-  const vp = useViewport({
-    width: Math.max(900, layout.width),
-    height: Math.max(520, layout.height),
-  });
+    const target = new Date(ticketInfo.expiresAt).getTime();
+    const updateCountdown = () => {
+      const diff = target - Date.now();
+      if (diff <= 0) {
+        setTicketCountdown('Expiró');
+        return;
+      }
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      setTicketCountdown(`${minutes}m ${String(seconds).padStart(2, '0')}s`);
+    };
 
-  if (!fam) {
-    return inline ? null : (
-      <div className="p-6">
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(interval);
+  }, [ticketInfo?.expiresAt]);
+
+  useEffect(() => {
+    if (!ticketInfo?.expiresAt) {
+      return undefined;
+    }
+
+    const targetTime = new Date(ticketInfo.expiresAt).getTime();
+    const timeUntilRefresh = targetTime - Date.now() - 60_000; // Refresh 1 minute before expiry
+
+    let timeoutId;
+    if (timeUntilRefresh > 0) {
+      timeoutId = window.setTimeout(() => {
+        setTicketRefreshKey((value) => value + 1);
+      }, timeUntilRefresh);
+    }
+
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [ticketInfo?.expiresAt]);
+
+  const uploadUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !family || !ticketInfo?.ticket) return '';
+    const { origin, pathname, search } = window.location;
+    const base = `${origin}${pathname}${search}`;
+    const params = new URLSearchParams();
+    params.set('ticket', ticketInfo.ticket);
+    // For tree photos, we might not need a specific memberId in the URL
+    return `${base}#/family/${family.id}/tree?${params.toString()}`;
+  }, [family, ticketInfo]);
+
+  const handleRefreshTicket = useCallback(() => {
+    setTicketRefreshKey((value) => value + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!qrCanvasRef.current || !uploadUrl) return;
+    QRCode.toCanvas(qrCanvasRef.current, uploadUrl, {
+      width: 192,
+      margin: 1,
+      errorCorrectionLevel: 'quartile',
+    }).catch((error) => {
+      console.error('No se pudo generar el QR para el árbol familiar', error);
+    });
+  }, [uploadUrl]);
+
+  const handleUploadFiles = async (files) => {
+    if (!familyId) return;
+    const fileList = Array.from(files || []);
+    let hasChanges = false;
+    for (const file of fileList) {
+      try {
+        const attachment = await createAttachment(familyId, {
+          category: TREE_CATEGORY,
+          description: file.name,
+          file,
+        });
+        if (attachment?.id) {
+          const url = URL.createObjectURL(file);
+          setPreviews((prev) => ({
+            ...prev,
+            [attachment.id]: { url, generated: true },
+          }));
+        }
+        hasChanges = true;
+      } catch (error) {
+        console.error('No se pudo subir la foto del árbol familiar', error);
+      }
+    }
+    if (hasChanges) {
+      try {
+        await listAttachmentsByFamily(familyId);
+      } catch (error) {
+        console.warn('No se pudo refrescar la galería del árbol luego de la carga', error);
+      }
+    }
+  };
+
+  const handleDeletePhoto = useCallback(
+    async (attachmentId) => {
+      if (!familyId || !attachmentId) return;
+      try {
+        await deleteAttachment(familyId, attachmentId);
+      } catch (error) {
+        console.error('No se pudo eliminar la foto del árbol familiar', error);
+      } finally {
+        setPreviews((prev) => {
+          if (!prev[attachmentId]) return prev;
+          const next = { ...prev };
+          const entry = next[attachmentId];
+          if (entry?.generated) {
+            URL.revokeObjectURL(entry.url);
+          }
+          delete next[attachmentId];
+          return next;
+        });
+      }
+    },
+    [familyId, deleteAttachment],
+  );
+
+  if (!familyId) {
+    return (
+      <div className={inline ? 'space-y-4' : 'p-6'}>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          No se encontró la familia.
+          Seleccioná una familia para ver el árbol familiar.
         </div>
       </div>
     );
   }
 
-  return (
-    <div className={inline ? '' : 'p-6'}>
-      {!inline && (
-        <TreeTopbar
-          fam={fam}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          onBack={() => (window.location.hash = `#/family/${fam.id}`)}
-          onFullscreen={vp.toggleFullscreen}
-        />
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 min-h-[calc(100vh-7rem)]">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <TreeToolbar
-            vp={vp}
-            validationSummary={validationSummary}
-            onShowValidation={handleShowValidation}
-            onExportJSON={handleExportJSON}
-            onExportPDF={handleExportPDF}
-          />
-          <PedigreePalette onToolSelect={handleToolSelect} />
-
-          <PedigreeCanvas
-            vp={vp}
-            layout={layout}
-            displayById={displayById}
-            legend={engineState.legend}
-            legendUsage={legendUsage}
-            metadata={metadata}
-            relationships={engineState.relationships}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            probandId={proband?.id || null}
-            onDropTool={handleDropTool}
-          />
-
-          <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-200">
-            Drag para desplazar, rueda para zoom. Atajos: <kbd>+</kbd>/<kbd>-</kbd>,{' '}
-            <kbd>F</kbd> fullscreen, <kbd>R</kbd> reset. Split centra ramas materna/paterna.
-          </div>
-        </div>
-
-        <MemberSidebar
-          selectedId={selectedId}
-          individualsById={individualsById}
-          relationships={engineState.relationships}
-          parentsMap={parentsMapFull}
-          actions={actions}
-          metadata={metadata}
-          onSelect={setSelectedId}
-        />
+  if (state.loading && !family) {
+    return (
+      <div className={inline ? 'space-y-4' : 'p-6'}>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">Cargando árbol familiar…</div>
       </div>
-      <ValidationPanel
-        open={showValidation}
-        items={validationSummary}
-        onClose={() => setShowValidation(false)}
-      />
-      {relationMenu && (
-        <RelationMenu
-          relation={relationMenu}
-          onClose={handleRelationMenuClose}
-          onChange={handleRelationMenuChange}
-        />
-      )}
-    </div>
-  );
-}
-
-function buildDisplayById(individuals, metadata) {
-  const privacy = metadata?.privacy || { names: 'initials', dates: 'year-only' };
-  const map = new Map();
-  (individuals || []).forEach((individual) => {
-    if (!individual?.id) return;
-    const shape = sexToShape(individual.sex);
-    const shading = computeShading(individual);
-    const name = formatName(individual, privacy.names);
-    const infoLines = buildInfoLines(individual, privacy.dates);
-    map.set(individual.id, {
-      id: individual.id,
-      shape,
-      shading,
-      name,
-      role: individual.rol || '',
-      infoLines,
-      affected: individual.affected || { value: false, dx: [] },
-      carrier: individual.carrier || { type: 'none', evidence: 'unknown' },
-      evaluations: individual.evaluations || [],
-      dead: !!individual.dead,
-      deadInfo: individual.deadInfo || { year: null, note: null },
-      bornYear: individual.bornYear,
-      notes: individual.notes || '',
-    });
-  });
-  return map;
-}
-
-function buildMembersForHooks(displayById) {
-  const arr = [];
-  displayById.forEach((entry, id) => {
-    arr.push({
-      id,
-      sexo: shapeToSexo(entry.shape),
-      nombre: entry.name,
-      rol: entry.role,
-      filiatorios: { iniciales: entry.name },
-      simbolo: entry.shape,
-      estado: entry.dead ? 'fallecido' : 'vivo',
-      edadTexto: entry.infoLines.find((line) => line.startsWith('edad:'))?.replace('edad:', '') || '',
-    });
-  });
-  return arr;
-}
-
-function relationshipsToPedigreeMap(relationships = []) {
-  const map = {};
-  relationships.forEach((relationship) => {
-    if (relationship.type !== 'parentChild') return;
-    const childId = relationship.child;
-    if (!childId) return;
-    const current = map[childId] || {
-      padreId: '',
-      madreId: '',
-      biological: true,
-      adoptive: false,
-    };
-    const padreId = relationship.father || current.padreId || '';
-    const madreId = relationship.mother || current.madreId || '';
-    map[childId] = {
-      padreId,
-      madreId,
-      biological: current.biological && relationship.biological !== false,
-      adoptive: current.adoptive || !!relationship.adoptive,
-    };
-  });
-  return map;
-}
-
-function buildInfoLines(individual) {
-  const lines = [];
-  if (typeof individual.age === 'number') {
-    lines.push(`edad:${individual.age}a`);
+    );
   }
-  if (individual.bornYear) {
-    lines.push(`b. ${individual.bornYear}`);
+
+  if (!family) {
+    return (
+      <div className={inline ? 'space-y-4' : 'p-6'}>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          No se encontró la familia solicitada.
+        </div>
+      </div>
+    );
   }
-  if (individual.dead) {
-    lines.push(formatDeath(individual.deadInfo));
-  }
-  const evalLine = formatEvaluations(individual.evaluations);
-  if (evalLine) lines.push(evalLine);
-  const dxList = ensureArray(individual.affected?.dx);
-  if (dxList.length) lines.push(`dx: ${dxList.join(', ')}`);
-  return lines;
-}
 
-function formatEvaluations(evaluations = []) {
-  if (!evaluations.length) return '';
-  const parts = evaluations.map((evaluation) => {
-    const code = evaluation.code || '';
-    const result = evaluation.result || '';
-    if (!code) return '';
-    if (!result) return code;
-    return `${code}${result.startsWith('+') || result.startsWith('-') ? result : ` (${result})`}`;
-  }).filter(Boolean);
-  return parts.length ? parts.join(' · ') : '';
-}
-
-function formatDeath(deadInfo) {
-  if (!deadInfo) return 'd.';
-  if (deadInfo.note) return deadInfo.note;
-  if (deadInfo.year) return `d. ${deadInfo.year}`;
-  return 'd.';
-}
-
-function formatName(individual, namesPrivacy) {
-  if (namesPrivacy === 'full' && individual.nombre) return individual.nombre;
-  const initials = individual?.filiatorios?.iniciales;
-  if (initials) return initials;
-  if (individual.nombre) {
-    return individual.nombre
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word) => word[0]?.toUpperCase() || '')
-      .join('');
-  }
-  if (individual.label) return individual.label;
-  return individual.id;
-}
-
-function sexToShape(sex) {
-  if (sex === 'M') return 'square';
-  if (sex === 'F') return 'circle';
-  return 'diamond';
-}
-
-function shapeToSexo(shape) {
-  if (shape === 'square') return 'M';
-  if (shape === 'circle') return 'F';
-  return '';
-}
-
-function computeShading(individual) {
-  if (individual.affected?.value) return 'filled';
-  if (individual.carrier?.type === 'AR') return 'half';
-  if (individual.carrier?.type === 'X') return 'dot';
-  return 'none';
-}
-
-function ensureArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function legendLabelFor(key, legend = {}) {
-  const map = {
-    filled: legend.filled || 'Afectado clínicamente',
-    halfFilled: legend.halfFilled || 'Portador AR',
-    dot: legend.dot || 'Portador ligado al X',
-    triangle: legend.triangle || 'Embarazo no a término',
-    diamond: legend.diamond || 'Sexo no especificado',
-  };
-  return map[key] || key;
-}
-
-function RelationMenu({ relation, onClose, onChange }) {
-  const ref = React.useRef(null);
-
-  React.useEffect(() => {
-    const handler = (event) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(event.target)) onClose?.();
-    };
-    document.addEventListener('mousedown', handler);
-    document.addEventListener('touchstart', handler);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('touchstart', handler);
-    };
-  }, [onClose]);
-
-  const { anchor } = relation;
-  const isCurrent = relation.status !== 'ended';
+  const totalTreePhotos = sortedTreePhotos.length;
+  const treePhotosLabel = totalTreePhotos === 1 ? 'foto' : 'fotos';
+  const autoRefreshLabel = `Actualización automática cada ${Math.round(
+    AUTO_REFRESH_INTERVAL_MS / 1000,
+  )} s`;
 
   return (
-    <div
-      className="fixed z-50"
-      style={{ left: anchor.x, top: anchor.y, transform: 'translate(-50%, -12px)' }}
-    >
+    <div className={inline ? 'space-y-6' : 'p-6 space-y-6'}>
       <div
-        ref={ref}
-        className="rounded-2xl border border-slate-300 bg-white shadow-lg min-w-[200px]"
-        onClick={(event) => event.stopPropagation()}
+        className={`grid gap-6 ${inline ? '' : 'lg:grid-cols-[1fr,320px] xl:grid-cols-[1fr,360px]'}`}
       >
-        <div className="px-4 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200 uppercase tracking-wide">
-          Editar vínculo
-        </div>
-        <div className="px-4 py-3 grid gap-3 text-xs text-slate-600">
-          <label className="flex items-center justify-between gap-3">
-            <span>Consanguinidad</span>
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={relation.consanguinity}
-              onChange={(event) =>
-                onChange?.({ consanguinity: event.target.checked, status: relation.status })
-              }
-            />
-          </label>
-          <label className="flex items-center justify-between gap-3">
-            <span>Relación vigente</span>
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={isCurrent}
-              onChange={(event) =>
-                onChange?.({ status: event.target.checked ? 'current' : 'ended' })
-              }
-            />
-          </label>
-        </div>
+        <main className="space-y-5 rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm backdrop-blur">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-1">
+              <h1 className="text-xl font-semibold text-slate-800">
+                Galería del árbol familiar
+              </h1>
+              <p className="text-sm text-slate-500">
+                {totalTreePhotos
+                  ? `Hay ${totalTreePhotos} ${treePhotosLabel}. ${autoRefreshLabel}.`
+                  : 'Aún no se cargaron fotos para el árbol familiar.'}
+              </p>
+            </div>
+            <UploadTreePhotos onFiles={handleUploadFiles} />
+          </div>
+
+          {!sortedTreePhotos.length && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              Aún no se cargaron fotos para el árbol familiar.
+            </div>
+          )}
+
+          {sortedTreePhotos.length > 0 && (
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {sortedTreePhotos.map((photo) => {
+                const preview = previews[photo.id]?.url || null;
+                const description = photo.description || photo.fileName || 'Árbol familiar';
+                return (
+                  <article
+                    key={photo.id}
+                    className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+                  >
+                    <div className="relative aspect-[4/5] overflow-hidden bg-slate-200">
+                      {preview ? (
+                        <img
+                          src={preview}
+                          alt={description}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center px-3 text-center text-xs text-slate-500">
+                          Vista previa no disponible
+                        </div>
+                      )}
+                    </div>
+                    <div className="relative grid gap-2 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-800" title={description}>
+                            {description}
+                          </p>
+                          <p className="text-xs text-slate-400">{formatDateTime(photo.createdAt)}</p>
+                        </div>
+                        <a
+                          href={preview || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`rounded-xl border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 ${preview ? '' : 'pointer-events-none opacity-50'}`}
+                          onClick={(event) => {
+                            if (!preview) {
+                              event.preventDefault();
+                            }
+                          }}
+                        >
+                          Ver grande
+                        </a>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePhoto(photo.id)}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                      >
+                        Eliminar foto
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </main>
+        <aside className="space-y-6 lg:sticky lg:top-6 lg:self-start">
+          <section className="space-y-4 rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">Carga remota del árbol</h2>
+                <p className="text-xs text-slate-500">
+                  Compartí el QR para que familiares suban fotos del árbol sin ingresar al sistema.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRefreshTicket}
+                disabled={ticketLoading}
+                className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {ticketLoading ? 'Actualizando…' : 'Actualizar'}
+              </button>
+            </div>
+
+            {ticketError ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600">
+                {ticketError}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <canvas
+                  ref={qrCanvasRef}
+                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                />
+                {ticketCountdown && (
+                  <span className="text-xs text-slate-500">
+                    {ticketCountdown === 'Expiró'
+                      ? 'El enlace venció. Generá uno nuevo para continuar.'
+                      : `Vence en ${ticketCountdown}.`}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {uploadUrl && (
+              <div className="grid gap-2">
+                <label className="text-xs font-medium text-slate-500" htmlFor="upload-ticket-url">
+                  Enlace directo
+                </label>
+                <textarea
+                  id="upload-ticket-url"
+                  readOnly
+                  value={uploadUrl}
+                  onFocus={(event) => event.target.select()}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 focus:border-emerald-400 focus:outline-none"
+                  rows={3}
+                />
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur">
+            <h2 className="text-sm font-semibold text-slate-800">Resumen rápido</h2>
+            <div className="mt-3 grid gap-3 text-xs text-slate-500">
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                <span>Archivos del árbol</span>
+                <span className="font-medium text-slate-700">{totalTreePhotos}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                <span>Estado de ticket</span>
+                <span className="font-medium text-emerald-600">
+                  {ticketCountdown === 'Expiró' ? 'Vencido' : 'Activo'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                <span>Actualización</span>
+                <span className="font-medium text-slate-700">Automática</span>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
   );
 }
 
-function buildPartnerMap(relationships = [], individuals = []) {
-  const map = new Map();
-  const register = (a, b) => {
-    if (!a || !b) return;
-    if (!map.has(a)) map.set(a, new Set());
-    if (!map.has(b)) map.set(b, new Set());
-    map.get(a).add(b);
-    map.get(b).add(a);
-  };
-  (relationships || []).forEach((rel) => {
-    if (!rel || rel.type !== 'partner') return;
-    register(rel.a, rel.b);
-  });
-  (individuals || []).forEach((ind) => {
-    if (!ind?.id || !ind?.parejaDe) return;
-    register(ind.id, ind.parejaDe);
-  });
-  return map;
-}
-
-function resolveParentIds(individualsById, primaryId, partnerId) {
-  const result = { fatherId: null, motherId: null };
-  const assign = (personId) => {
-    if (!personId) return;
-    const person = individualsById.get(personId);
-    const sex = (person?.sex || '').toUpperCase();
-    if (sex === 'M' && !result.fatherId) {
-      result.fatherId = personId;
-      return;
-    }
-    if (sex === 'F' && !result.motherId) {
-      result.motherId = personId;
-      return;
-    }
-    if (!result.fatherId) {
-      result.fatherId = personId;
-    } else if (!result.motherId && personId !== result.fatherId) {
-      result.motherId = personId;
-    }
-  };
-  assign(primaryId);
-  assign(partnerId);
-  return result;
+export default function FamilyTreePage({ familyId, inline = false }) {
+  const sessionUser = useMemo(() => getUser(), []);
+  // TODO: Implement UploadTicketMode for tree photos if needed
+  // if (sessionUser?.scope === 'upload-ticket') {
+  //   return (
+  //     <UploadTicketMode
+  //       ticketContext={sessionUser?.uploadTicket ?? null}
+  //     />
+  //   );
+  // }
+  return <StandardFamilyTreePage familyId={familyId} inline={inline} />;
 }

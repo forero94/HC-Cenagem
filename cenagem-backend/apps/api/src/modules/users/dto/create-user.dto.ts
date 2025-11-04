@@ -2,15 +2,18 @@ import {
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
-  IsEmail,
   IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateUserDto {
-  @IsEmail()
-  email: string;
+  @IsString()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  username: string;
 
   @IsString()
   @MinLength(8)
@@ -28,4 +31,8 @@ export class CreateUserDto {
   @IsString({ each: true })
   @IsOptional()
   roles?: string[];
+
+  @IsString()
+  @IsOptional()
+  licenseNumber?: string;
 }

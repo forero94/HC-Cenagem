@@ -20,9 +20,12 @@ export class CreateEvolutionDto {
   @MaxLength(150)
   authorName?: string;
 
-  @ApiPropertyOptional({ description: 'Correo electrónico del profesional' })
+  @ApiPropertyOptional({
+    description: 'Identificador de quien registra (correo o usuario)',
+  })
   @IsOptional()
-  @IsEmail()
+  @IsString()
+  @MaxLength(150)
   authorEmail?: string;
 
   @ApiPropertyOptional({

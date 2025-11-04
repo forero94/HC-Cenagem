@@ -8,19 +8,21 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AttachmentsModule = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const database_1 = require("../../../../../dist/libs/infrastructure/database");
 const attachments_service_1 = require("./attachments.service");
 const attachments_controller_1 = require("./attachments.controller");
 const family_attachments_controller_1 = require("./family-attachments.controller");
+const upload_tickets_service_1 = require("./upload-tickets.service");
 let AttachmentsModule = class AttachmentsModule {
 };
 exports.AttachmentsModule = AttachmentsModule;
 exports.AttachmentsModule = AttachmentsModule = __decorate([
     (0, common_1.Module)({
-        imports: [database_1.PrismaModule],
-        providers: [attachments_service_1.AttachmentsService],
+        imports: [database_1.PrismaModule, config_1.ConfigModule],
+        providers: [attachments_service_1.AttachmentsService, upload_tickets_service_1.UploadTicketsService],
         controllers: [attachments_controller_1.AttachmentsController, family_attachments_controller_1.FamilyAttachmentsController],
-        exports: [attachments_service_1.AttachmentsService],
+        exports: [attachments_service_1.AttachmentsService, upload_tickets_service_1.UploadTicketsService],
     })
 ], AttachmentsModule);
 //# sourceMappingURL=attachments.module.js.map

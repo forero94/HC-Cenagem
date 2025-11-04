@@ -1,18 +1,34 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Permission } from '@prisma/client';
-import { ActiveUserData, PERMISSIONS_KEY, ROLES_KEY } from '@common';
+import {
+  ActiveUserData,
+  IS_PUBLIC_KEY,
+  PERMISSIONS_KEY,
+  ROLES_KEY,
+  UPLOAD_TICKET_ALLOWED_KEY,
+} from '@common';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      return true;
+    }
+
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(
       ROLES_KEY,
       [context.getHandler(), context.getClass()],
@@ -23,9 +39,10 @@ export class RolesGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
-    if (!requiredRoles && !requiredPermissions) {
-      return true;
-    }
+    const uploadTicketAllowed = this.reflector.getAllAndOverride<boolean>(
+      UPLOAD_TICKET_ALLOWED_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     const request = context
       .switchToHttp()
@@ -34,6 +51,19 @@ export class RolesGuard implements CanActivate {
 
     if (!user) {
       throw new UnauthorizedException();
+    }
+
+    if (user.scope === 'upload-ticket') {
+      if (!uploadTicketAllowed) {
+        throw new ForbiddenException(
+          'Este acceso sólo permite subir adjuntos específicos.',
+        );
+      }
+      return true;
+    }
+
+    if (!requiredRoles && !requiredPermissions) {
+      return true;
     }
 
     if (requiredRoles?.length) {

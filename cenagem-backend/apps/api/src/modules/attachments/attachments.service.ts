@@ -2,9 +2,11 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Attachment, AttachmentCategory, Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database';
+import { ActiveUserData } from '@common';
 import { ListAttachmentsQueryDto } from './dto/list-attachments.query';
 import { CreateAttachmentDto } from './dto/create-attachment.dto';
 import { UpdateAttachmentDto } from './dto/update-attachment.dto';
@@ -111,8 +113,25 @@ export class AttachmentsService {
   async createForFamily(
     familyId: string,
     input: CreateAttachmentDto,
+    actor?: ActiveUserData,
   ): Promise<AttachmentDetailDto> {
     await this.assertFamilyExists(familyId);
+
+    if (actor?.scope === 'upload-ticket') {
+      if (actor.uploadTicketFamilyId !== familyId) {
+        throw new UnauthorizedException(
+          'El ticket no autoriza subir archivos en esta familia.',
+        );
+      }
+      if (
+        actor.uploadTicketMemberId &&
+        actor.uploadTicketMemberId !== input.memberId
+      ) {
+        throw new UnauthorizedException(
+          'El ticket sólo permite subir archivos para el integrante seleccionado.',
+        );
+      }
+    }
 
     const buffer = this.decodeBase64(input.base64Data);
 
@@ -155,21 +174,25 @@ export class AttachmentsService {
         category: input.category ?? AttachmentCategory.OTHER,
         description: input.description?.trim() || null,
         tags: input.tags?.map((tag) => tag.trim()).filter(Boolean) ?? [],
-        metadata: this.jsonInput(input.metadata),
+        metadata: this.composeMetadata(input.metadata, actor),
         content: buffer,
+        uploadedById: actor?.userId ?? null,
       },
     });
 
     return this.mapAttachmentDetail(created);
   }
 
-  async create(input: CreateAttachmentDto): Promise<AttachmentDetailDto> {
+  async create(
+    input: CreateAttachmentDto,
+    actor?: ActiveUserData,
+  ): Promise<AttachmentDetailDto> {
     if (!input.familyId) {
       throw new NotFoundException(
         'Debe especificarse la familia para subir un adjunto',
       );
     }
-    return this.createForFamily(input.familyId, input);
+    return this.createForFamily(input.familyId, input, actor);
   }
 
   async update(
@@ -342,6 +365,25 @@ export class AttachmentsService {
       return null;
     }
     return value as Record<string, unknown>;
+  }
+
+  private composeMetadata(
+    metadata: Record<string, unknown> | null | undefined,
+    actor?: ActiveUserData,
+  ): Prisma.InputJsonValue | Prisma.JsonNullValueInput {
+    let normalized: Record<string, unknown> | null = null;
+    if (metadata && typeof metadata === 'object') {
+      normalized = { ...metadata };
+    }
+
+    if (actor?.scope === 'upload-ticket') {
+      normalized = {
+        ...(normalized ?? {}),
+        uploadTicketId: actor.uploadTicketId,
+      };
+    }
+
+    return this.jsonInput(normalized);
   }
 
   private jsonInput(

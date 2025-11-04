@@ -4,18 +4,18 @@
 
 :root {
   color-scheme: light;
-  --surface-base: #f6f9ff;
-  --surface-panel: #ffffff;
-  --surface-muted: #edf2ff;
-  --surface-soft: #eef7ff;
-  --text-strong: #1f2d4b;
-  --text-muted: #5a6b91;
-  --text-extra-muted: #6e7ca1;
-  --border-soft: #ccdcff;
-  --border-strong: #b5c8ff;
-  --accent: #1f5fb4;
-  --accent-strong: #174a8a;
-  --accent-soft: #e2ecff;
+  --surface-base: #e1e8ff;
+  --surface-panel: #f5f7ff;
+  --surface-muted: #d4defb;
+  --surface-soft: #c3cff5;
+  --text-strong: #1c2745;
+  --text-muted: #1c2745;
+  --text-extra-muted: #1c2745;
+  --border-soft: #aebdf0;
+  --border-strong: #90a7e4;
+  --accent: #1c2745;
+  --accent-strong: #1c2745;
+  --accent-soft: #cad7ff;
   --emerald-soft: #daf5ee;
   --violet-soft: #efe6ff;
 }
@@ -25,9 +25,24 @@ html, body, #root { height: 100%; }
 body {
   @apply antialiased;
   background:
-    radial-gradient(circle at 15% 20%, rgba(115, 168, 255, 0.24), transparent 55%),
-    radial-gradient(circle at 80% 0%, rgba(194, 162, 255, 0.22), transparent 50%),
-    var(--surface-base);
+    radial-gradient(circle at 15% 20%, rgba(71, 118, 203, 0.25), transparent 55%),
+    radial-gradient(circle at 80% 0%, rgba(56, 92, 175, 0.22), transparent 50%),
+    linear-gradient(180deg, #1c2745 0%, #1c2745 100%);
+  color: var(--text-strong);
+}
+.app-shell {
+  color: rgba(245, 249, 255, 0.92);
+}
+.app-shell h1,
+.app-shell h2,
+.app-shell h3,
+.app-shell h4 {
+  color: #ffffff;
+}
+.app-shell [class*="bg-white"],
+.app-shell .card,
+.app-shell .surface-primary,
+.app-shell .surface-accent {
   color: var(--text-strong);
 }
 

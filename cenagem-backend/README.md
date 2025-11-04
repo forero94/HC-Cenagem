@@ -51,9 +51,9 @@ Swagger UI lives at `http://localhost:3000/docs` and updates automatically in de
 - `npm run test` – unit tests (Jest).
 - `npm run test:e2e` – e2e tests in `apps/api/test`.
 - `npm run build` – compile to `dist/`.
-- `npm run prisma:generate` *(add to scripts if desired)* – `prisma generate`.
 - `npm run db:push` – `prisma db push`.
 - `npm run db:migrate` – `prisma migrate dev`.
+- `npm run db:seed` – ejecuta el seed de Prisma (`prisma/seed.ts`) con roles y usuarios demo.
 - `npm run db:studio` – launch Prisma Studio.
 
 > The Prisma helpers above expect a running PostgreSQL instance reachable through `DATABASE_URL`.
@@ -70,10 +70,18 @@ Swagger UI lives at `http://localhost:3000/docs` and updates automatically in de
 Required secrets live in `.env.example` (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, expiration windows).  
 Swagger documents protected routes with `BearerAuth`; use the access token returned from login.
 
+### Credenciales demo
+
+El seed por defecto crea las siguientes cuentas activas (todas con la contraseña `12345678`):
+
+- `admin`
+- `medico`
+- `admision`
+
 ## Next Steps
 
 1. Run `npm run db:migrate` after adjusting the Prisma schema or adding seed roles/users.
-2. Seed baseline roles (e.g., admin, asesor, coordinador) and create an initial admin user via Prisma Studio or SQL.
+2. Ejecuta `npm run db:seed` para regenerar los roles y usuarios demo cuando haga falta.
 3. Expose catalogue endpoints the frontend wizard requires and migrate case workflows into `CasesModule`.
 4. Expand audit coverage (e.g., case lifecycle events) by injecting `AuditService` where mutations happen.
 

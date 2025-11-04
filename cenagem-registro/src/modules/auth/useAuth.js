@@ -28,7 +28,7 @@ const normalizeState = (maybeState) => {
   return null;
 };
 
-const hydrate = () => {
+export const hydrate = () => {
   if (hydrated) {
     return cachedState;
   }
@@ -87,8 +87,8 @@ export const getUser = () => {
   return state?.user ?? null;
 };
 
-export const login = async (email, password) => {
-  const credentials = { email, password };
+export const login = async (username, password) => {
+  const credentials = { username, password };
   try {
     const tokenPair = await cenagemApi.login(credentials);
     setAuthTokens(tokenPair);
@@ -100,6 +100,31 @@ export const login = async (email, password) => {
     return user;
   } catch (error) {
     clearAuthTokens();
+    persistState(null);
+    throw error;
+  }
+};
+
+export const loginWithUploadTicket = async (ticket) => {
+  try {
+    const response = await cenagemApi.loginWithUploadTicket(ticket);
+    if (!response?.tokens?.accessToken) {
+      throw new Error('Ticket inválido');
+    }
+    const sessionUser = {
+      ...(response.user ?? {}),
+      scope: 'upload-ticket',
+      uploadTicket: response.ticket ?? null,
+    };
+    persistState({
+      tokens: response.tokens,
+      user: sessionUser,
+    });
+    return {
+      user: sessionUser,
+      ticket: response.ticket ?? null,
+    };
+  } catch (error) {
     persistState(null);
     throw error;
   }

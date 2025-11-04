@@ -59,9 +59,15 @@ let UsersService = class UsersService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    findByEmailWithRoles(email) {
+    findByEmail(email) {
         return this.prisma.user.findUnique({
             where: { email: email.toLowerCase().trim() },
+            include: this.userInclude,
+        });
+    }
+    findByUsername(username) {
+        return this.prisma.user.findUnique({
+            where: { email: username.toLowerCase().trim() },
             include: this.userInclude,
         });
     }
@@ -78,22 +84,23 @@ let UsersService = class UsersService {
         });
     }
     async createUser(input, actorId) {
-        const email = input.email.toLowerCase().trim();
+        const username = input.username.toLowerCase().trim();
         const existing = await this.prisma.user.findUnique({
-            where: { email },
+            where: { email: username },
         });
         if (existing) {
-            throw new common_1.BadRequestException(`El correo ${input.email} ya está registrado.`);
+            throw new common_1.BadRequestException(`El usuario ${input.username} ya está registrado.`);
         }
         const passwordHash = await argon2.hash(input.password);
         const roleNames = input.roles ?? [];
         return this.prisma.$transaction(async (tx) => {
             const user = await tx.user.create({
                 data: {
-                    email,
+                    email: username,
                     passwordHash,
                     firstName: input.firstName,
                     lastName: input.lastName,
+                    licenseNumber: input.licenseNumber?.trim() || null,
                 },
             });
             if (roleNames.length > 0) {

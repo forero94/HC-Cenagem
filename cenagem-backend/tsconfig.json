@@ -21,12 +21,18 @@
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@common": ["dist/libs/common/index"],
-      "@common/*": ["dist/libs/common/*"],
-      "@domain": ["dist/libs/domain/index"],
-      "@domain/*": ["dist/libs/domain/*"],
-      "@infrastructure": ["dist/libs/infrastructure/index"],
-      "@infrastructure/*": ["dist/libs/infrastructure/*"]
+      "@common": ["dist/libs/common/index", "libs/common/src/index"],
+      "@common/*": ["dist/libs/common/*", "libs/common/src/*"],
+      "@domain": ["dist/libs/domain/index", "libs/domain/src/index"],
+      "@domain/*": ["dist/libs/domain/*", "libs/domain/src/*"],
+      "@infrastructure": [
+        "dist/libs/infrastructure/index",
+        "libs/infrastructure/src/index"
+      ],
+      "@infrastructure/*": [
+        "dist/libs/infrastructure/*",
+        "libs/infrastructure/src/*"
+      ]
     }
   }
 }

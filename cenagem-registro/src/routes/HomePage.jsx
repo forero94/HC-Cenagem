@@ -384,6 +384,13 @@ export default function HomePage({ user, onLogout }) {
   const [wizardFamilyId, setWizardFamilyId] = useState(null);
   const [wizardBusy, setWizardBusy] = useState(false);
   const [wizardActive, setWizardActive] = useState(false);
+  const [showAnalyticsButton, setShowAnalyticsButton] = useState(true);
+  const userPermissions = Array.isArray(user?.permissions) ? user.permissions : [];
+  const canViewUsers = userPermissions.includes('USERS_VIEW');
+  const canManageUsers = userPermissions.includes('USERS_MANAGE');
+  const userAdminDescription = canManageUsers
+    ? 'Gestioná cuentas y roles del equipo.'
+    : 'Consultá el listado de usuarios habilitados.';
 
   useEffect(() => {
     setWizardBusy(false);
@@ -737,9 +744,17 @@ export default function HomePage({ user, onLogout }) {
     if (!payload.consultaFecha) {
       payload.consultaFecha = appointmentContext?.date || formatISODateLocal(new Date());
     }
+    let logOpened = false;
     try {
       const normalizedCode = normalizeAgCode(payload.agNumber);
       const code = normalizedCode || generateNextCode(families);
+      console.groupCollapsed('[new-case] Creando HC');
+      logOpened = true;
+      console.log('Formulario normalizado', payload);
+      console.log('Código elegido', { ingresa: payload.agNumber, normalizado: normalizedCode, final: code });
+      if (appointmentContext) {
+        console.log('Contexto de turno asociado', appointmentContext);
+      }
       const motivo = buildMotivoMetadata(payload.motivoGroup, payload.motivoDetail);
       const tags = Array.from(new Set([
         motivo.groupId,
@@ -915,15 +930,22 @@ export default function HomePage({ user, onLogout }) {
 
       setShowNewCase(false);
       setPendingAppointmentForNewCase(null);
+      console.log('HC creada exitosamente', { familyId: family.id, code, probandId: proband?.id });
       alert(`HC creada correctamente. Código asignado: ${code}`);
     } catch (error) {
       console.error('Error creando la HC', error);
+      if (error?.info) {
+        console.error('[new-case] Detalle de error API', error.info);
+      }
       const friendlyMessage =
         error?.message && typeof error.message === 'string'
           ? error.message
           : 'No se pudo crear la HC. Revisá los datos e intentá nuevamente.';
       setCreateCaseError(friendlyMessage);
     } finally {
+      if (logOpened) {
+        console.groupEnd();
+      }
       setCreatingCase(false);
     }
   };
@@ -1018,19 +1040,29 @@ export default function HomePage({ user, onLogout }) {
     setShowNewCase(false);
   };
   return (
-    <div className="p-6 grid gap-4">
+    <div className="app-shell p-6 grid gap-4">
       
       <HomeHeader
         onLogout={onLogout}
         user={user}
         title="CENAGEM · HC Familiar"
-        onReset={() => {
-          window.localStorage.removeItem(STORAGE_KEY);
-          window.location.reload();
-        }}
       />
 
-      <MetricsBoard metrics={metrics} />
+      {canViewUsers && (
+        <section className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-white flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-white">Administración de usuarios</h2>
+            <p className="text-xs text-white/70">{userAdminDescription}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = '#/users'; }}
+            className="px-4 py-2 rounded-xl border border-white/40 text-sm font-medium text-white hover:bg-white/10 transition self-start sm:self-auto"
+          >
+            Abrir panel
+          </button>
+        </section>
+      )}
 
       <CaseAccessPanel
         onCreateCase={() => {
@@ -1131,6 +1163,19 @@ export default function HomePage({ user, onLogout }) {
     )}
   </div>
 )}
+
+      <MetricsBoard metrics={metrics} />
+
+      {showAnalyticsButton && (
+        <div className="mx-auto max-w-6xl px-4 py-2 flex items-center justify-center">
+          <button
+            onClick={() => { window.location.hash = 'analytics'; }}
+            className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 shadow-sm !text-white"
+          >
+            📊 Análisis de datos
+          </button>
+        </div>
+      )}
 
       <FooterBar onAnalytics={() => { window.location.hash = 'analytics'; }} />
     </div>

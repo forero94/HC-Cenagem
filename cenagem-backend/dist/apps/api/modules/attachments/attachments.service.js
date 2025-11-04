@@ -70,8 +70,17 @@ let AttachmentsService = class AttachmentsService {
             buffer: Buffer.from(attachment.content),
         };
     }
-    async createForFamily(familyId, input) {
+    async createForFamily(familyId, input, actor) {
         await this.assertFamilyExists(familyId);
+        if (actor?.scope === 'upload-ticket') {
+            if (actor.uploadTicketFamilyId !== familyId) {
+                throw new common_1.UnauthorizedException('El ticket no autoriza subir archivos en esta familia.');
+            }
+            if (actor.uploadTicketMemberId &&
+                actor.uploadTicketMemberId !== input.memberId) {
+                throw new common_1.UnauthorizedException('El ticket sólo permite subir archivos para el integrante seleccionado.');
+            }
+        }
         const buffer = this.decodeBase64(input.base64Data);
         let memberId = null;
         if (input.memberId) {
@@ -106,17 +115,18 @@ let AttachmentsService = class AttachmentsService {
                 category: input.category ?? client_1.AttachmentCategory.OTHER,
                 description: input.description?.trim() || null,
                 tags: input.tags?.map((tag) => tag.trim()).filter(Boolean) ?? [],
-                metadata: this.jsonInput(input.metadata),
+                metadata: this.composeMetadata(input.metadata, actor),
                 content: buffer,
+                uploadedById: actor?.userId ?? null,
             },
         });
         return this.mapAttachmentDetail(created);
     }
-    async create(input) {
+    async create(input, actor) {
         if (!input.familyId) {
             throw new common_1.NotFoundException('Debe especificarse la familia para subir un adjunto');
         }
-        return this.createForFamily(input.familyId, input);
+        return this.createForFamily(input.familyId, input, actor);
     }
     async update(attachmentId, input) {
         const attachment = await this.prisma.attachment.findUnique({
@@ -250,6 +260,19 @@ let AttachmentsService = class AttachmentsService {
             return null;
         }
         return value;
+    }
+    composeMetadata(metadata, actor) {
+        let normalized = null;
+        if (metadata && typeof metadata === 'object') {
+            normalized = { ...metadata };
+        }
+        if (actor?.scope === 'upload-ticket') {
+            normalized = {
+                ...(normalized ?? {}),
+                uploadTicketId: actor.uploadTicketId,
+            };
+        }
+        return this.jsonInput(normalized);
     }
     jsonInput(value) {
         if (value === undefined || value === null) {

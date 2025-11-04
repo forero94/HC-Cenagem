@@ -6,6 +6,8 @@ import type { Request } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { TokenPairDto } from './dto/token-pair.dto';
+import { UploadTicketLoginDto } from './dto/upload-ticket-login.dto';
+import { UploadTicketLoginResponseDto } from './dto/upload-ticket-login.response';
 import { AuthService } from './auth.service';
 
 @ApiTags('auth')
@@ -33,6 +35,18 @@ export class AuthController {
   ): Promise<TokenPairDto> {
     return this.authService.refresh(
       payload.refreshToken,
+      this.buildContext(request),
+    );
+  }
+
+  @Public()
+  @Post('upload-ticket')
+  async loginWithUploadTicket(
+    @Body() payload: UploadTicketLoginDto,
+    @Req() request: Request,
+  ): Promise<UploadTicketLoginResponseDto> {
+    return this.authService.exchangeUploadTicket(
+      payload.ticket,
       this.buildContext(request),
     );
   }

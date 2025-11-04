@@ -15,6 +15,7 @@ const passport_1 = require("@nestjs/passport");
 const database_1 = require("../../../../../dist/libs/infrastructure/database");
 const audit_module_1 = require("../audit/audit.module");
 const users_module_1 = require("../users/users.module");
+const attachments_module_1 = require("../attachments/attachments.module");
 const auth_controller_1 = require("./auth.controller");
 const auth_service_1 = require("./auth.service");
 const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
@@ -36,6 +37,7 @@ exports.AuthModule = AuthModule = __decorate([
                 }),
             }),
             database_1.PrismaModule,
+            attachments_module_1.AttachmentsModule,
             users_module_1.UsersModule,
             audit_module_1.AuditModule,
         ],

@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AttachmentsController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const _common_1 = require("../../../../../dist/libs/common/index");
 const attachments_service_1 = require("./attachments.service");
 const list_attachments_query_1 = require("./dto/list-attachments.query");
 const create_attachment_dto_1 = require("./dto/create-attachment.dto");
@@ -27,8 +28,8 @@ let AttachmentsController = class AttachmentsController {
     list(query) {
         return this.attachments.list(query);
     }
-    create(body) {
-        return this.attachments.create(body);
+    create(body, actor) {
+        return this.attachments.create(body, actor);
     }
     getById(attachmentId) {
         return this.attachments.getById(attachmentId);
@@ -43,7 +44,7 @@ let AttachmentsController = class AttachmentsController {
             res.setHeader('Content-Type', 'application/octet-stream');
         }
         res.setHeader('Content-Length', String(content.size ?? content.buffer.length));
-        res.send(content.buffer);
+        return content.buffer;
     }
     update(attachmentId, body) {
         return this.attachments.update(attachmentId, body);
@@ -68,8 +69,9 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Crear un adjunto' }),
     (0, swagger_1.ApiCreatedResponse)({ description: 'Adjunto creado' }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, _common_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [create_attachment_dto_1.CreateAttachmentDto]),
+    __metadata("design:paramtypes", [create_attachment_dto_1.CreateAttachmentDto, Object]),
     __metadata("design:returntype", void 0)
 ], AttachmentsController.prototype, "create", null);
 __decorate([

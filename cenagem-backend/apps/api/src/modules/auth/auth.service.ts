@@ -6,9 +6,11 @@ import { PrismaService } from '@infrastructure/database';
 import * as argon2 from 'argon2';
 import { randomUUID } from 'crypto';
 import { AuditService } from '../audit/audit.service';
+import { UploadTicketsService } from '../attachments/upload-tickets.service';
 import { UsersService, UserWithRoles } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { TokenPairDto } from './dto/token-pair.dto';
+import { UploadTicketLoginResponseDto } from './dto/upload-ticket-login.response';
 import { AccessTokenPayload, RefreshTokenPayload } from './auth.types';
 
 interface AuthContext {
@@ -23,6 +25,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly uploadTickets: UploadTicketsService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -30,9 +33,7 @@ export class AuthService {
     credentials: LoginDto,
     context: AuthContext,
   ): Promise<TokenPairDto> {
-    const user = await this.usersService.findByEmailWithRoles(
-      credentials.email,
-    );
+    const user = await this.usersService.findByUsername(credentials.username);
 
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('Credenciales inválidas.');
@@ -49,6 +50,10 @@ export class AuthService {
 
     const sessionId = randomUUID();
     const tokenPair = await this.generateTokenPair(user, sessionId);
+
+    if (!tokenPair.refreshToken) {
+      throw new Error('Token de refresco no disponible.');
+    }
 
     await this.persistSession(
       sessionId,
@@ -114,6 +119,9 @@ export class AuthService {
     }
 
     const tokenPair = await this.generateTokenPair(user, session.id);
+    if (!tokenPair.refreshToken) {
+      throw new Error('Token de refresco no disponible.');
+    }
     await this.replaceSessionRefreshToken(
       session.id,
       tokenPair.refreshToken,
@@ -132,6 +140,90 @@ export class AuthService {
     );
 
     return tokenPair;
+  }
+
+  async exchangeUploadTicket(
+    ticketValue: string,
+    context: AuthContext,
+  ): Promise<UploadTicketLoginResponseDto> {
+    const { ticket, familyCode, familyDisplayName, memberLabel, members } =
+      await this.uploadTickets.consume(ticketValue);
+
+    const user = await this.usersService.findByIdWithRoles(ticket.createdById);
+
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('El ticket no es válido.');
+    }
+
+    const roleNames = user.roles.map((relation) => relation.role.name);
+    const displayName = [user.firstName, user.lastName]
+      .filter((value) => typeof value === 'string' && value.trim().length > 0)
+      .join(' ')
+      .trim();
+    const primaryRole = roleNames[0] ?? null;
+    const licenseNumber = user.licenseNumber ?? null;
+
+    const accessPayload: AccessTokenPayload = {
+      sub: user.id,
+      email: user.email,
+      roles: [],
+      permissions: [],
+      sessionId: `ticket:${ticket.id}`,
+      scope: 'upload-ticket',
+      ticketId: ticket.id,
+      ticketFamilyId: ticket.familyId,
+      ticketMemberId: ticket.memberId ?? null,
+    };
+
+    const accessToken = await this.jwtService.signAsync(accessPayload, {
+      expiresIn: this.uploadTicketAccessTokenTtl,
+    });
+
+    const accessDecoded = this.decodeToken<AccessTokenPayload>(accessToken);
+
+    const tokens: TokenPairDto = {
+      accessToken,
+      refreshToken: null,
+      expiresIn: this.secondsUntil(accessDecoded?.exp),
+      refreshExpiresIn: 0,
+    };
+
+    await this.auditService.log(
+      user.id,
+      'auth.uploadTicket.login',
+      'uploadTicket',
+      ticket.id,
+      {
+        familyId: ticket.familyId,
+        memberId: ticket.memberId,
+        ip: this.normalizeIp(context.ip),
+        userAgent: context.userAgent,
+      },
+    );
+
+    return {
+      tokens,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        displayName: displayName || user.email,
+        primaryRole,
+        licenseNumber,
+        scope: 'upload-ticket',
+      },
+      ticket: {
+        id: ticket.id,
+        familyId: ticket.familyId,
+        memberId: ticket.memberId ?? null,
+        expiresAt: ticket.expiresAt,
+        familyCode,
+        familyDisplayName: familyDisplayName ?? null,
+        memberLabel: memberLabel ?? null,
+        members,
+      },
+    };
   }
 
   async logout(userId: string, sessionId: string): Promise<void> {
@@ -182,6 +274,10 @@ export class AuthService {
       roles,
       permissions,
       sessionId,
+      scope: 'standard',
+      ticketId: null,
+      ticketFamilyId: null,
+      ticketMemberId: null,
     };
 
     const accessToken = await this.jwtService.signAsync(accessPayload, {
@@ -286,6 +382,11 @@ export class AuthService {
   private get accessTokenTtl(): JwtSignOptions['expiresIn'] {
     return (this.configService.get<string>('auth.access.expiresIn') ??
       '15m') as JwtSignOptions['expiresIn'];
+  }
+
+  private get uploadTicketAccessTokenTtl(): JwtSignOptions['expiresIn'] {
+    return (this.configService.get<string>('auth.uploadTicket.expiresIn') ??
+      '10m') as JwtSignOptions['expiresIn'];
   }
 
   private get refreshTokenTtl(): JwtSignOptions['expiresIn'] {

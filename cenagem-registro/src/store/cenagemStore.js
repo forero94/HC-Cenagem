@@ -1,19 +1,17 @@
 // ===============================
 // src/store/cenagemStore.js — Bridge entre frontend y API oficial
 // ===============================
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cenagemApi } from '@/lib/apiClient';
 
 export const STORAGE_KEY = 'cenagem-api-v1';
 
-const EMPTY_STATE = {
-  families: [],
-  members: [],
-  evolutions: [],
-  studies: [],
-  attachments: [],
-  genetics: [],
-  photos: [],
+const FAMILY_DETAIL_KEY = 'family-detail';
+
+const queryKeys = {
+  families: () => ['families'],
+  familyDetail: (familyId) => [FAMILY_DETAIL_KEY, familyId],
 };
 
 export const STATUS_FROM_API = {
@@ -176,6 +174,8 @@ const mapEvolution = (evolution) => ({
   texto: evolution.note,
   author: evolution.authorName || evolution.authorEmail || 'sin autor',
   at: evolution.recordedAt,
+  createdAt: evolution.createdAt,
+  updatedAt: evolution.updatedAt,
 });
 
 const mapStudy = (study) => ({
@@ -209,6 +209,21 @@ const mapAttachment = (attachment) => ({
   createdAt: attachment.createdAt,
 });
 
+const normalizeApiCollection = (payload) => {
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload)) return payload;
+  return [];
+};
+
+const mapFamilyDetailFromApi = (detail) => ({
+  family: mapFamily(detail),
+  members: (detail.members || []).map(mapMember),
+  evolutions: (detail.evolutions || []).map(mapEvolution),
+  studies: (detail.studies || []).map(mapStudy),
+  attachments: (detail.attachments || []).map(mapAttachment),
+});
+
 const mapAppointment = (appointment) => ({
   id: appointment.id,
   familyId: appointment.familyId,
@@ -228,11 +243,6 @@ const upsertFamily = (families, family) => {
     return families.map((item) => (item.id === family.id ? family : item));
   }
   return [family, ...families];
-};
-
-const replaceForFamily = (collection, familyId, nextItems) => {
-  const filtered = collection.filter((item) => item.familyId !== familyId);
-  return [...filtered, ...nextItems];
 };
 
 const toFamilyPayload = (data) => ({
@@ -358,270 +368,349 @@ const fileToBase64 = (file) =>
   });
 
 export function useCenagemStore() {
-  const [state, setState] = useState(EMPTY_STATE);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const queryClient = useQueryClient();
+  const [globalError, setGlobalError] = useState(null);
+  const [cacheVersion, bumpCacheVersion] = useReducer((count) => count + 1, 0);
 
-  const applyFamilyDetail = useCallback((detail) => {
-    const family = mapFamily(detail);
-    const members = (detail.members || []).map(mapMember);
-    const evolutions = (detail.evolutions || []).map(mapEvolution);
-    const studies = (detail.studies || []).map(mapStudy);
-    const attachments = (detail.attachments || []).map(mapAttachment);
+  
 
-    setState((prev) => ({
-      ...prev,
-      families: upsertFamily(prev.families, family),
-      members: replaceForFamily(prev.members, family.id, members),
-      evolutions: replaceForFamily(prev.evolutions, family.id, evolutions),
-      studies: replaceForFamily(prev.studies, family.id, studies),
-      attachments: replaceForFamily(prev.attachments, family.id, attachments),
-    }));
+  const fetchFamilies = useCallback(async () => {
+    const response = await cenagemApi.listFamilies({ limit: 100 });
+    const collection = normalizeApiCollection(response);
+    return collection.map(mapFamily);
   }, []);
 
-  const refreshFamilies = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await cenagemApi.listFamilies({ limit: 100 });
-      const collection = Array.isArray(response?.data)
-        ? response.data
-        : Array.isArray(response)
-          ? response
-          : [];
-      if (!collection.length) {
-        setState(EMPTY_STATE);
-        setLoading(false);
-        return;
-      }
-      const details = await Promise.all(
-        collection.map(async (family) => cenagemApi.getFamily(family.id)),
-      );
-      details.forEach(applyFamilyDetail);
-    } catch (err) {
-      console.error('Error al sincronizar familias', err);
-      setError(err);
-    } finally {
-      setLoading(false);
+  const {
+    data: families = [],
+    refetch: refetchFamilies,
+    isFetching: isFetchingFamilies,
+    isLoading: isLoadingFamilies,
+    error: familiesError,
+  } = useQuery({
+    queryKey: queryKeys.families(),
+    queryFn: fetchFamilies,
+    staleTime: 60_000,
+  });
+
+  const detailEntries = useMemo(() => {
+    if (cacheVersion < 0) {
+      return [];
     }
-  }, [applyFamilyDetail]);
+    return queryClient
+      .getQueriesData({ queryKey: [FAMILY_DETAIL_KEY] })
+      .map(([, value]) => value)
+      .filter(Boolean);
+  }, [queryClient, cacheVersion]);
+
+  const members = useMemo(
+    () => detailEntries.flatMap((detail) => detail.members || []),
+    [detailEntries],
+  );
+  const evolutions = useMemo(
+    () => detailEntries.flatMap((detail) => detail.evolutions || []),
+    [detailEntries],
+  );
+  const studies = useMemo(
+    () => detailEntries.flatMap((detail) => detail.studies || []),
+    [detailEntries],
+  );
+  const attachments = useMemo(
+    () => detailEntries.flatMap((detail) => detail.attachments || []),
+    [detailEntries],
+  );
+
+  const loading = isLoadingFamilies || isFetchingFamilies;
+  const error = globalError || familiesError || null;
+
+  const applyFamilyDetail = useCallback(
+    (detail) => {
+      const mapped = mapFamilyDetailFromApi(detail);
+      queryClient.setQueryData(queryKeys.familyDetail(mapped.family.id), mapped);
+      queryClient.setQueryData(queryKeys.families(), (prev = []) => upsertFamily(prev, mapped.family));
+      return mapped;
+    },
+    [queryClient],
+  );
+
+  const refreshFamilies = useCallback(async () => {
+    setGlobalError(null);
+    const { data } = await refetchFamilies({ throwOnError: true });
+    return data ?? [];
+  }, [refetchFamilies]);
 
   const ensureFamilyDetail = useCallback(
     async (familyId, force = false) => {
       if (!familyId) return null;
+      setGlobalError(null);
       if (!force) {
-        const exists = state.families.some((family) => family.id === familyId);
-        if (exists) return state.families.find((family) => family.id === familyId) || null;
+        const cached = queryClient.getQueryData(queryKeys.familyDetail(familyId));
+        if (cached) return cached;
       }
-      const detail = await cenagemApi.getFamily(familyId);
-      applyFamilyDetail(detail);
-      return detail;
+      try {
+        const detail = await cenagemApi.getFamily(familyId);
+        return applyFamilyDetail(detail);
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [applyFamilyDetail, state.families],
+    [applyFamilyDetail, queryClient],
   );
-
-  useEffect(() => {
-    void refreshFamilies();
-  }, [refreshFamilies]);
 
   const createFamily = useCallback(
     async (data) => {
+      setGlobalError(null);
       const payload = toFamilyPayload(data);
-      const created = await cenagemApi.createFamily(payload);
-      applyFamilyDetail(created);
-      return mapFamily(created);
+      try {
+        const created = await cenagemApi.createFamily(payload);
+        const mapped = applyFamilyDetail(created);
+        return mapped.family;
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
     [applyFamilyDetail],
   );
 
   const updateFamily = useCallback(
     async (familyId, patch) => {
+      setGlobalError(null);
       const payload = toFamilyPayload({ ...patch, code: patch.code });
-      const updated = await cenagemApi.updateFamily(familyId, payload);
-      applyFamilyDetail(updated);
-      return mapFamily(updated);
+      try {
+        await cenagemApi.updateFamily(familyId, payload);
+        const detail = await cenagemApi.getFamily(familyId);
+        const mapped = applyFamilyDetail(detail);
+        return mapped.family;
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
     [applyFamilyDetail],
   );
 
   const createMember = useCallback(
     async (familyId, input) => {
+      setGlobalError(null);
       const payload = toMemberPayload({ ...input, familyId });
-      await cenagemApi.createFamilyMember(familyId, payload);
-      const detail = await cenagemApi.getFamily(familyId);
-      applyFamilyDetail(detail);
-      return detail.members.map(mapMember).find((member) => member.familyId === familyId);
+      try {
+        const created = await cenagemApi.createFamilyMember(familyId, payload);
+        const detail = await cenagemApi.getFamily(familyId);
+        const mapped = applyFamilyDetail(detail);
+        return mapped.members.find((member) => member.id === created.id) || mapMember(created);
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
     [applyFamilyDetail],
   );
 
   const updateMember = useCallback(
     async (memberId, patch) => {
-      const member = state.members.find((item) => item.id === memberId);
-      if (!member) return null;
-      const payload = toMemberPayload({ ...member, ...patch }, true);
-      await cenagemApi.updateFamilyMember(member.familyId, memberId, payload);
-      const detail = await cenagemApi.getFamily(member.familyId);
-      applyFamilyDetail(detail);
-      return detail.members.map(mapMember).find((item) => item.id === memberId) || null;
+      const existing = members.find((item) => item.id === memberId);
+      if (!existing) return null;
+      setGlobalError(null);
+      const payload = toMemberPayload({ ...existing, ...patch }, true);
+      try {
+        await cenagemApi.updateFamilyMember(existing.familyId, memberId, payload);
+        const detail = await cenagemApi.getFamily(existing.familyId);
+        const mapped = applyFamilyDetail(detail);
+        return mapped.members.find((item) => item.id === memberId) || null;
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [applyFamilyDetail, state.members],
+    [applyFamilyDetail, members],
   );
 
   const deleteMember = useCallback(
     async (memberId) => {
-      const member = state.members.find((item) => item.id === memberId);
-      if (!member) return;
-      await cenagemApi.deleteFamilyMember(member.familyId, memberId);
-      setState((prev) => ({
-        ...prev,
-        members: prev.members.filter((item) => item.id !== memberId),
-        evolutions: prev.evolutions.filter((item) => item.memberId !== memberId),
-        studies: prev.studies.filter((item) => item.memberId !== memberId),
-        attachments: prev.attachments.filter((item) => item.memberId !== memberId),
-      }));
-      await ensureFamilyDetail(member.familyId, true);
+      const existing = members.find((item) => item.id === memberId);
+      if (!existing) return;
+      setGlobalError(null);
+      try {
+        await cenagemApi.deleteFamilyMember(existing.familyId, memberId);
+        const detail = await cenagemApi.getFamily(existing.familyId);
+        applyFamilyDetail(detail);
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [state.members, ensureFamilyDetail],
+    [applyFamilyDetail, members],
   );
 
   const addEvolution = useCallback(
     async (memberId, note, author) => {
-      const member = state.members.find((item) => item.id === memberId);
-      if (!member) return null;
-      await cenagemApi.createEvolution(member.familyId, memberId, {
-        note,
-        authorName: author,
-      });
-      const detail = await cenagemApi.getFamily(member.familyId);
-      applyFamilyDetail(detail);
-      const evolutions = (detail.evolutions || []).map(mapEvolution);
-      return evolutions.find((item) => item.memberId === memberId) || null;
+      const existing = members.find((item) => item.id === memberId);
+      if (!existing) return null;
+      setGlobalError(null);
+      try {
+        await cenagemApi.createEvolution(existing.familyId, memberId, {
+          note,
+          authorName: author,
+        });
+        const detail = await cenagemApi.getFamily(existing.familyId);
+        const mapped = applyFamilyDetail(detail);
+        return mapped.evolutions.find((item) => item.memberId === memberId) || null;
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [applyFamilyDetail, state.members],
+    [applyFamilyDetail, members],
   );
+
   const listMembers = useCallback(
-    (familyId) => state.members.filter((member) => member.familyId === familyId),
-    [state.members],
+    (familyId) => {
+      const detail = queryClient.getQueryData(queryKeys.familyDetail(familyId));
+      return detail?.members || [];
+    },
+    [queryClient],
   );
 
   const listEvolutions = useCallback(
-    (familyId) => state.evolutions.filter((item) => item.familyId === familyId),
-    [state.evolutions],
+    (familyId) => {
+      const detail = queryClient.getQueryData(queryKeys.familyDetail(familyId));
+      return detail?.evolutions || [];
+    },
+    [queryClient],
   );
 
   const listStudiesByFamily = useCallback(
     async (familyId) => {
-      await ensureFamilyDetail(familyId, true);
-      return state.studies.filter((study) => study.familyId === familyId);
+      const detail = await ensureFamilyDetail(familyId, true);
+      return detail?.studies || [];
     },
-    [ensureFamilyDetail, state.studies],
+    [ensureFamilyDetail],
   );
 
-  const createStudy = useCallback(async (familyId, input) => {
-    const payload = toStudyPayload({ ...input, familyId });
-    const created = await cenagemApi.createFamilyStudy(familyId, payload);
-    const mapped = mapStudy(created);
-    setState((prev) => ({
-      ...prev,
-      studies: [mapped, ...prev.studies.filter((study) => study.id !== mapped.id)],
-    }));
-    return mapped;
-  }, []);
+  const createStudy = useCallback(
+    async (familyId, input) => {
+      setGlobalError(null);
+      const payload = toStudyPayload({ ...input, familyId });
+      try {
+        const created = await cenagemApi.createFamilyStudy(familyId, payload);
+        const detail = await cenagemApi.getFamily(familyId);
+        const mapped = applyFamilyDetail(detail);
+        return mapped.studies.find((item) => item.id === created.id) || mapStudy(created);
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
+    },
+    [applyFamilyDetail],
+  );
 
   const deleteStudy = useCallback(
     async (familyId, studyId) => {
-      await cenagemApi.deleteStudy(studyId);
-      setState((prev) => ({
-        ...prev,
-        studies: prev.studies.filter((study) => study.id !== studyId),
-      }));
-      await ensureFamilyDetail(familyId, true);
+      setGlobalError(null);
+      try {
+        await cenagemApi.deleteStudy(studyId);
+        const detail = await cenagemApi.getFamily(familyId);
+        applyFamilyDetail(detail);
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [ensureFamilyDetail],
+    [applyFamilyDetail],
   );
 
   const listAttachmentsByFamily = useCallback(
     async (familyId) => {
-      const response = await cenagemApi.listFamilyAttachments(familyId);
-      const collection = Array.isArray(response?.data)
-        ? response.data
-        : Array.isArray(response)
-          ? response
-          : [];
-      const mapped = collection.map(mapAttachment);
-      setState((prev) => ({
-        ...prev,
-        attachments: replaceForFamily(prev.attachments, familyId, mapped),
-      }));
-      return mapped;
+      setGlobalError(null);
+      try {
+        const response = await cenagemApi.listFamilyAttachments(familyId);
+        const mapped = normalizeApiCollection(response).map(mapAttachment);
+        const detail = await ensureFamilyDetail(familyId);
+        if (detail) {
+          queryClient.setQueryData(queryKeys.familyDetail(familyId), {
+            ...detail,
+            attachments: mapped,
+          });
+        }
+        return mapped;
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [],
+    [ensureFamilyDetail, queryClient],
   );
 
   const createAttachment = useCallback(
     async (familyId, input) => {
-      const prepared = await toAttachmentPayload(input);
-      const payload = {
-        memberId: prepared.memberId,
-        category: prepared.category || 'PHOTO',
-        fileName: prepared.fileName,
-        contentType: prepared.contentType,
-        base64Data: prepared.base64Data,
-        description: prepared.description,
-        tags: prepared.tags,
-        metadata: prepared.metadata,
-      };
-      const created = await cenagemApi.createFamilyAttachment(familyId, payload);
-      const mapped = mapAttachment(created);
-      setState((prev) => ({
-        ...prev,
-        attachments: replaceForFamily(prev.attachments, familyId, [
-          mapped,
-          ...prev.attachments.filter(
-            (item) => item.familyId === familyId && item.id !== mapped.id,
-          ),
-        ]),
-      }));
-      return mapped;
+      setGlobalError(null);
+      try {
+        const prepared = await toAttachmentPayload(input);
+        const payload = {
+          memberId: prepared.memberId,
+          category: prepared.category || 'PHOTO',
+          fileName: prepared.fileName,
+          contentType: prepared.contentType,
+          base64Data: prepared.base64Data,
+          description: prepared.description,
+          tags: prepared.tags,
+          metadata: prepared.metadata,
+        };
+        const created = await cenagemApi.createFamilyAttachment(familyId, payload);
+        const detail = await cenagemApi.getFamily(familyId);
+        const mapped = applyFamilyDetail(detail);
+        return mapped.attachments.find((item) => item.id === created.id) || mapAttachment(created);
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [],
+    [applyFamilyDetail],
   );
 
   const deleteAttachment = useCallback(
     async (familyId, attachmentId) => {
-      await cenagemApi.deleteAttachment(attachmentId);
-      setState((prev) => ({
-        ...prev,
-        attachments: prev.attachments.filter((item) => item.id !== attachmentId),
-      }));
-      await ensureFamilyDetail(familyId, true);
+      setGlobalError(null);
+      try {
+        await cenagemApi.deleteAttachment(attachmentId);
+        const detail = await cenagemApi.getFamily(familyId);
+        applyFamilyDetail(detail);
+      } catch (err) {
+        setGlobalError(err);
+        throw err;
+      }
     },
-    [ensureFamilyDetail],
+    [applyFamilyDetail],
   );
 
-  const downloadAttachment = useCallback((attachmentId) => {
-    return cenagemApi.downloadAttachment(attachmentId);
-  }, []);
+  const downloadAttachment = useCallback(
+    (attachmentId) => cenagemApi.downloadAttachment(attachmentId),
+    [],
+  );
 
   const storeState = useMemo(
     () => ({
-      ...state,
+      families,
+      members,
+      evolutions,
+      studies,
+      attachments,
       loading,
       error,
     }),
-    [state, loading, error],
+    [families, members, evolutions, studies, attachments, loading, error],
   );
 
   return {
     state: storeState,
     loading,
     error,
-    families: state.families,
-    members: state.members,
-    evolutions: state.evolutions,
-    studies: state.studies,
-    attachments: state.attachments,
+    families,
+    members,
+    evolutions,
+    studies,
+    attachments,
     refreshFamilies,
     ensureFamilyDetail,
     listMembers,
@@ -630,6 +719,7 @@ export function useCenagemStore() {
     updateFamily,
     createMember,
     updateMember,
+    deleteMember,
     addEvolution,
     listStudiesByFamily,
     createStudy,

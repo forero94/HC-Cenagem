@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { ActiveUserData, CurrentUser } from '@common';
 import { AttachmentsService } from './attachments.service';
 import { ListAttachmentsQueryDto } from './dto/list-attachments.query';
 import { CreateAttachmentDto } from './dto/create-attachment.dto';
@@ -40,8 +41,11 @@ export class AttachmentsController {
   @Post()
   @ApiOperation({ summary: 'Crear un adjunto' })
   @ApiCreatedResponse({ description: 'Adjunto creado' })
-  create(@Body() body: CreateAttachmentDto) {
-    return this.attachments.create(body);
+  create(
+    @Body() body: CreateAttachmentDto,
+    @CurrentUser() actor: ActiveUserData,
+  ) {
+    return this.attachments.create(body, actor);
   }
 
   @Get(':attachmentId')
@@ -56,7 +60,7 @@ export class AttachmentsController {
   async download(
     @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
     @Res({ passthrough: true }) res: Response,
-  ) {
+  ): Promise<Buffer> {
     const content = await this.attachments.getContent(attachmentId);
     res.setHeader(
       'Content-Disposition',
@@ -71,7 +75,7 @@ export class AttachmentsController {
       'Content-Length',
       String(content.size ?? content.buffer.length),
     );
-    res.send(content.buffer);
+    return content.buffer;
   }
 
   @Patch(':attachmentId')

@@ -1043,20 +1043,20 @@ function useAnalyticsAudit(currentUser) {
 }
 function AppToolbar({ title, onBack }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between text-white">
       <div className="flex items-center gap-2">
         {onBack && (
           <button
             type="button"
             onClick={onBack}
-            className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm"
+            className="px-3 py-2 rounded-xl border border-white/40 text-white hover:bg-white/10 transition text-sm"
           >
             ← Volver
           </button>
         )}
-        <h2 className="text-xl font-semibold">{title}</h2>
+        <h2 className="text-xl font-semibold text-white">{title}</h2>
       </div>
-      <span className="text-xs text-slate-500">Módulo Analytics · Demo</span>
+      <span className="text-xs text-white/70">Módulo Analytics · Demo</span>
     </div>
   );
 }
@@ -1701,7 +1701,7 @@ export default function AnalyticsPage({ onBack, currentUser }) {
   };
 
   return (
-    <div className="p-6 pb-16 grid gap-6">
+    <div className="app-shell p-6 pb-16 grid gap-6">
       <AppToolbar title="Analytics clínico-genético" onBack={onBack} />
       <DashboardSection metrics={metrics} logAudit={logAudit} />
       <SectionCard

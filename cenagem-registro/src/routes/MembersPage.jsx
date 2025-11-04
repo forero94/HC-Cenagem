@@ -218,20 +218,20 @@ export default function MembersPage({ familyId, inline = false }) {
   };
 
   return (
-    <div className={inline ? '' : 'p-6'}>
+    <div className={inline ? '' : 'app-shell p-6 grid gap-4'}>
       {!inline && (
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between text-white">
           <button
             type="button"
             onClick={goBack}
-            className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+            className="px-3 py-2 rounded-xl border border-white/40 text-white hover:bg-white/10 transition"
           >
             ← Volver
           </button>
-          <h2 className="text-lg font-semibold">HC {family.code} · Miembros (administración)</h2>
+          <h2 className="text-lg font-semibold text-white">HC {family.code} · Miembros (administración)</h2>
           <button
             type="button"
-            className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+            className="px-3 py-2 rounded-xl border border-white/40 text-white hover:bg-white/10 transition"
             onClick={reload}
             disabled={loading}
           >

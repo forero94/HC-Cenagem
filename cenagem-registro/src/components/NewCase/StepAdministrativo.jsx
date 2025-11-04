@@ -23,7 +23,7 @@ const CONSANGUINIDAD_OPTIONS = [
   { value: 'desconocido', label: 'No refiere / Desconoce' },
 ];
 
-export default function StepAdministrativo({ grupos, value, onChange }) {
+export default function StepAdministrativo({ grupos, value, onChange, errors = {} }) {
   const v = value || {};
   const set = (field) => (e) => onChange?.(field, e.target.value);
   const setUpper = (field) => (e) => onChange?.(field, e.target.value.toUpperCase());
@@ -35,30 +35,65 @@ export default function StepAdministrativo({ grupos, value, onChange }) {
   const edad = useMemo(() => calculateAgeYears(v.pacienteNacimiento), [v.pacienteNacimiento]);
   const currentGroup = useMemo(() => groups.find((g) => g.id === v.motivoGroup), [groups, v.motivoGroup]);
   const isOtherGroup = currentGroup?.id === 'otros';
+  const fieldErrors = errors || {};
+  const errorFor = (field) => (typeof fieldErrors[field] === 'string' ? fieldErrors[field] : '');
+  const inputClass = (field, base) => (errorFor(field)
+    ? `${base} border-rose-500 focus:border-rose-500 focus:ring-rose-200`
+    : base);
 
   return (
     <section className="grid gap-6 text-slate-800">
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 rounded-3xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
-        <label className="flex flex-col gap-1">
+        <label className="required flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Nº HC / AG</span>
-          <input className="rounded-xl border border-sky-200 bg-white px-3 py-2 uppercase text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.agNumber || ''} onChange={setUpper('agNumber')} placeholder="AG-0001" />
+          <input
+            required
+            className={inputClass('agNumber', 'rounded-xl border border-sky-200 bg-white px-3 py-2 uppercase text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100')}
+            value={v.agNumber || ''}
+            onChange={setUpper('agNumber')}
+            placeholder="AG-0001"
+            aria-invalid={errorFor('agNumber') ? 'true' : undefined}
+          />
+          {errorFor('agNumber') ? (
+            <span className="text-[11px] text-rose-600">{errorFor('agNumber')}</span>
+          ) : null}
         </label>
 
         <label className="required flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Nombre</span>
-          <input required className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.pacienteNombre || ''} onChange={set('pacienteNombre')} placeholder="Nombre(s)" />
+          <input
+            required
+            className={inputClass('pacienteNombre', 'rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100')}
+            value={v.pacienteNombre || ''}
+            onChange={set('pacienteNombre')}
+            placeholder="Nombre(s)"
+            aria-invalid={errorFor('pacienteNombre') ? 'true' : undefined}
+          />
+          {errorFor('pacienteNombre') ? (
+            <span className="text-[11px] text-rose-600">{errorFor('pacienteNombre')}</span>
+          ) : null}
         </label>
-        <label className="required flex flex-col gap-1">
+        <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Apellido</span>
-          <input required className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.pacienteApellido || ''} onChange={set('pacienteApellido')} placeholder="Apellido(s)" />
+          <input className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.pacienteApellido || ''} onChange={set('pacienteApellido')} placeholder="Apellido(s)" />
         </label>
         <label className="required flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">DNI</span>
-          <input required className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.pacienteDni || ''} onChange={set('pacienteDni')} placeholder="Documento" />
+          <input
+            required
+            className={inputClass('pacienteDni', 'rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100')}
+            value={v.pacienteDni || ''}
+            onChange={set('pacienteDni')}
+            placeholder="Documento"
+            aria-invalid={errorFor('pacienteDni') ? 'true' : undefined}
+          />
+          {errorFor('pacienteDni') ? (
+            <span className="text-[11px] text-rose-600">{errorFor('pacienteDni')}</span>
+          ) : null}
         </label>
-        <label className="required flex flex-col gap-1">
+        <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Fecha de nacimiento</span>
-          <input required type="date" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.pacienteNacimiento || ''} onChange={set('pacienteNacimiento')} />
+          <input type="date" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.pacienteNacimiento || ''} onChange={set('pacienteNacimiento')} />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Edad (auto)</span>
@@ -77,9 +112,9 @@ export default function StepAdministrativo({ grupos, value, onChange }) {
           <span className="text-xs font-medium text-sky-700">Provincia de residencia</span>
           <input className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.provincia || ''} onChange={set('provincia')} placeholder="Provincia / región" />
         </label>
-        <label className="required flex flex-col gap-1">
+        <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Motivo de consulta</span>
-          <select required className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.motivoGroup || ''} onChange={(e) => handleGroup(e.target.value)}>
+          <select className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-900 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" value={v.motivoGroup || ''} onChange={(e) => handleGroup(e.target.value)}>
             <option value="">Seleccionar…</option>
             {groups.map((g) => (
               <option key={g.id} value={g.id}>{g.label}</option>
@@ -209,9 +244,9 @@ export default function StepAdministrativo({ grupos, value, onChange }) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 rounded-3xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
-        <label className="required flex flex-col gap-1">
+        <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-violet-700">Obra social / cobertura</span>
-          <input required className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-violet-900 placeholder:text-violet-400 shadow-sm focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100" value={v.pacienteObraSocial || ''} onChange={set('pacienteObraSocial')} placeholder="Nombre de la cobertura" />
+          <input className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-violet-900 placeholder:text-violet-400 shadow-sm focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100" value={v.pacienteObraSocial || ''} onChange={set('pacienteObraSocial')} placeholder="Nombre de la cobertura" />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-violet-700">Nº de afiliado</span>

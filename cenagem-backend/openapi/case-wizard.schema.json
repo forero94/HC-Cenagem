@@ -1,0 +1,1367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.cenagem.gob.ar/schemas/case-wizard-flat.json",
+  "title": "CaseWizardFlat",
+  "type": "object",
+  "description": "Conjunto plano de campos para el wizard de carga de casos clínicos",
+  "additionalProperties": false,
+  "properties": {
+    "pacienteNombre": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteDni": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteNacimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteDireccion": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "motivoGroup": {
+      "type": "string",
+      "default": "",
+      "x-section": "motivo"
+    },
+    "motivoDetail": {
+      "type": "string",
+      "default": "",
+      "x-section": "motivo"
+    },
+    "motivoPaciente": {
+      "type": "string",
+      "default": "",
+      "x-section": "motivo"
+    },
+    "motivoDerivacion": {
+      "type": "string",
+      "default": "",
+      "x-section": "motivo"
+    },
+    "enfInicioContexto": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "enfEvolucionActual": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "enfManifestacionesClaves": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "enfEvaluacionesPrevias": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "enfImpactoPlan": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "consultaFecha": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteEscolaridad": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteEscolaridadRendimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteAcompanante": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteAcompananteParentesco": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "contactoTelefono1": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "contactoTelefono2": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteHabitos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteApoyosPsicosociales": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteObraSocial": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteObraSocialNumero": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadreNombre": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadreApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadreProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadreConsanguinidad": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadrePadreApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadrePadreProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadreMadreApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorPadreMadreProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadreNombre": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadreApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadreProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadreConsanguinidad": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadrePadreApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadrePadreProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadreMadreApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "tutorMadreMadreProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "agNumber": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "provincia": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "medicoAsignado": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteSexo": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteEmail": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteTelefono": {
+      "type": "string",
+      "default": "",
+      "x-section": "administrativo"
+    },
+    "pacienteProfesion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteAntecedentes": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "antecedentesNeurologicos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "antecedentesMetabolicos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "antecedentesSensoriales": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "antecedentesPsicosociales": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenPeso": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenTalla": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenPc": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenPesoPercentil": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenTallaPercentil": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenPcPercentil": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenProporciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenObservaciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenDismorfias": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenOjos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenNariz": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenFiltrum": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenBoca": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenOrejas": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenCuello": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenTorax": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenColumna": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenAbdomen": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenGenitales": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenMalformaciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenPiel": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenNeurologico": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "pacienteExamenOtras": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "edadMaternaConcepcion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "edadPaternaConcepcion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "controlPrenatal": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "controlPrenatalDetalle": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "embarazoComplicaciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "embarazoExposiciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalEcoAlteraciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalTipoParto": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalEdadGestacional": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalPesoNacimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalTallaNacimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalApgar1": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalApgar5": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalInternacionNeonatal": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "perinatalComplicaciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalSemanas": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalEcografia": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalCribado": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalRciu": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalInvasivos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalGeneticaFetal": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalConsejeria": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalNotas": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "prenatalProcedimientos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "ndHitosMotores": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "ndLenguaje": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "ndConducta": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "ndRegresion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "ndAreaCognitiva": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "ndEscolaridadDetalle": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "ndEEG": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "ndRMN": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "ndEstudiosOtros": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "ndInterconsultas": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "ndApoyos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "comportamientoInteraccion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "comportamientoAdaptativas": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "comportamientoEscalas": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "comportamientoApoyo": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "reproTiempoBusqueda": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "reproFemeninoDatos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "reproMasculinoDatos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "reproPerdidasGestacionales": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "reproDiagnosticos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "reproTratamientos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "reproEstudiosPrevios": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "reproPlan": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "oncoTiposTumor": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "oncoEdadDiagnostico": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "oncoTratamientos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "oncoEstudiosPrevios": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "oncoArbolFamiliar": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "oncoRiesgoModelos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "oncoEstudiosDisponibles": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "oncoPlanSeguimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "metaSintomasAgudos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "metaCribadoNeonatal": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "metaBioquimica": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "consanguinidad": {
+      "type": "string",
+      "default": "no",
+      "x-section": "clinico"
+    },
+    "consanguinidadDetalle": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "familiaAntecedentesNeuro": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "familiaAbortosInfertilidad": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "familiaDesarrolloHermanos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "familiaDiagnosticosGeneticos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "obstetricosDescripcion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaEdadInicio": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "tallaFamiliaAdultos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "tallaEstudiosPrevios": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "tallaTratamientos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "tallaMotivoConsulta": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "x-section": "clinico"
+    },
+    "tallaTallaCm": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaTallaDE": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaPesoKg": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaImc": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaVelocidadCrecimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaTallaDiana": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaEdadOsea": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaDiscrepanciaEdadOsea": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaAntecedentes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "x-section": "clinico"
+    },
+    "tallaExamenFisico": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "x-section": "clinico"
+    },
+    "tallaClasificacionMorfologica": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "tallaComplementariosGenerales": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "x-section": "clinico"
+    },
+    "dismorfiasDescripcion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "dismorfiasSistemasAfectados": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "dismorfiasImagenes": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "dismorfiasEstudiosGeneticos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "incTipoEstudio": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "incHallazgo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "incAccionRequerida": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "otrosMotivo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "otrosEstudios": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "otrosPlan": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "monoFenotipo": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "monoBioquimica": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "monoOrganoSistema": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "monoEstudiosPrevios": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "monoTratamiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "monoPlanEstudios": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "monoNotas": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosPrimerNivel": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosSegundoNivel": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosTercerNivel": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosComplementariosNotas": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "sintesisClasificacion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "sintesisSindromico": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "sintesisReversibilidad": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "sintesisEtiologia": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "planDerivaciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "planConsejeriaGenetica": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "planControles": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "planRegistroHpo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "primeraEvolucion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "resumenPrimeraConsulta": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "b1Nombre": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "b1Apellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "b1Nacimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "b1Email": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "b1Profesion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "b1ObraSocial": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "b1Antecedentes": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Nombre": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Apellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Nacimiento": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Email": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Profesion": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1ObraSocial": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Antecedentes": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Gestas": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Partos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Abortos": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "c1Cesareas": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abueloPaternoApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abueloPaternoProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abuelaPaternaApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abuelaPaternaProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abueloMaternoApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abueloMaternoProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abuelaMaternaApellido": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "abuelaMaternaProcedencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "clinico"
+    },
+    "identificacionNombre": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionEdad": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionDni": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionCobertura": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionDomicilio": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionFechaConsulta": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionFum": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionEdadGestacional": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionMetodoCalculo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "identificacionMotivoConsulta": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesMedicosCronicos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesCirugias": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesMedicaciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesConsumo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesVacunas": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesMenarca": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesMetodoAnticonceptivo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesHistoriaObstetrica": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesComplicacionesPrevias": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesAbortos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesConsanguinidad": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "antecedentesEtnia": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "familiaHistoriaGenetica": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "familiaAbortosRecurrentes": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "familiaPortadores": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "familiaCancer": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "familiaArbolGenealogico": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "parejaEdad": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "parejaOcupacion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "parejaAntecedentesMedicos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "parejaConsumo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "parejaHistoriaFamiliar": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "embarazoControlPrenatal": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "embarazoSuplementacion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "embarazoInfecciones": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "embarazoEventos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "embarazoPesoTension": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "embarazoMovimientos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "embarazoLaboratorios": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosEcoPrimerTrimestre": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosEcoSegundoTrimestre": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosEcoDoppler": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosScreening": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosScreeningResultados": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosInvasivos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "estudiosInvasivosHallazgos": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "psicosocialEducacion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "psicosocialApoyo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "psicosocialDeseo": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "psicosocialSituacion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "psicosocialViolencia": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "sintesisResumen": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "sintesisPlanAccion": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    },
+    "sintesisRegistro": {
+      "type": "string",
+      "default": "",
+      "x-section": "plan"
+    }
+  }
+}

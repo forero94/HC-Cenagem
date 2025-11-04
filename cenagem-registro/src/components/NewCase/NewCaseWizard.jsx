@@ -8,6 +8,7 @@ import StepGrupoEspecifico from './StepGrupoEspecifico';
 import StepEstudiosComplementarios from './StepEstudiosComplementarios';
 import StepPrimeraEvolucion from './StepPrimeraEvolucion';
 import { useCaseWizardState } from './useCaseWizardState';
+import clinicalStepsConfig from './clinicalStepsConfig.json';
 
 const calculateAgeYears = (iso) => {
   if (!iso) return null;
@@ -37,6 +38,45 @@ const getTodayDateValue = () => {
   const local = new Date(now.getTime() - offsetMinutes * 60000);
   return local.toISOString().slice(0, 10);
 };
+
+const ADMINISTRATIVE_STEP = {
+  id: 'administrativo',
+  label: 'Administrativo',
+  telemetryEvent: 'clinical_step_administrativo',
+};
+
+const mapClinicalStep = (stepConfig, availability, groupId) => {
+  const { availabilityKey, disableWhenFalse, telemetryEvent, ...rest } = stepConfig;
+  if (!availabilityKey) {
+    return {
+      ...rest,
+      id: stepConfig.id,
+      label: stepConfig.label,
+      telemetryEvent,
+      availabilityKey: null,
+      disableWhenFalse: Boolean(disableWhenFalse),
+      groupId,
+      enabled: true,
+    };
+  }
+
+  const availabilityValue = availability?.[availabilityKey];
+  const enabled = disableWhenFalse ? availabilityValue !== false : Boolean(availabilityValue);
+
+  return {
+    ...rest,
+    id: stepConfig.id,
+    label: stepConfig.label,
+    telemetryEvent,
+    availabilityKey,
+    disableWhenFalse: Boolean(disableWhenFalse),
+    groupId,
+    enabled,
+  };
+};
+
+const buildClinicalSteps = (availability, groupId) =>
+  clinicalStepsConfig.map((stepConfig) => mapClinicalStep(stepConfig, availability, groupId));
 
 export default function NewCaseWizard({
   currentUser,
@@ -72,10 +112,14 @@ useEffect(() => {
 }, [startStep]);
 
 useEffect(() => {
-  if (currentUser?.name && !flat.medicoAsignado) {
-    updateField('medicoAsignado', currentUser.name);
+  const fallbackMedico =
+    (typeof currentUser?.name === 'string' && currentUser.name.trim()) ||
+    (typeof currentUser?.email === 'string' && currentUser.email.trim()) ||
+    '';
+  if (fallbackMedico && !flat.medicoAsignado) {
+    updateField('medicoAsignado', fallbackMedico);
   }
-}, [currentUser, flat.medicoAsignado, updateField]);
+}, [currentUser?.name, currentUser?.email, flat.medicoAsignado, updateField]);
 
 useEffect(() => {
   if (!flat.consultaFecha) {
@@ -115,35 +159,33 @@ useEffect(() => {
   );
 
   const clinicalSteps = useMemo(
-    () => ([
-      { id: 'motivo', label: 'Motivo de consulta', enabled: true },
-      { id: 'antecedentes', label: 'Antecedentes', enabled: pacienteAvailability.antecedentes },
-      { id: 'historia', label: 'Enfermedad actual', enabled: true },
-      { id: 'preguntas', label: 'Preguntas específicas', enabled: true },
-      { id: 'examen', label: 'Examen físico', enabled: pacienteAvailability.examen },
-      { id: 'estudios', label: 'Estudios complementarios', enabled: true },
-      { id: 'primera', label: 'Primera evolución', enabled: true },
-      { id: 'identificacion', label: 'Datos identificatorios', enabled: pacienteAvailability.identificacion !== false },
-    ]),
-    [pacienteAvailability],
+    () => buildClinicalSteps(pacienteAvailability, resolvedGroupId),
+    [resolvedGroupId, pacienteAvailability],
   );
 
   const steps = useMemo(
     () => (showAdministrativeStep
-      ? [{ id: 'administrativo', label: 'Administrativo', enabled: true }, ...clinicalSteps]
+      ? [
+        {
+          ...ADMINISTRATIVE_STEP,
+          groupId: resolvedGroupId,
+          enabled: true,
+        },
+        ...clinicalSteps,
+      ]
       : clinicalSteps),
-    [showAdministrativeStep, clinicalSteps],
+    [showAdministrativeStep, clinicalSteps, resolvedGroupId],
   );
 
   const maxStep = steps.length;
   const minStep = 1;
   const validationMap = useMemo(() => ({
-    administrativo: 1,
-    motivo: 2,
-    antecedentes: 3,
-    preguntas: 4,
-    identificacion: 5,
-  }), []);
+      administrativo: 1,
+      motivo: 2,
+      historia: 3,
+      preguntas: 4,
+      identificacion: 5,
+    }), []);
   const validationStepIndexes = useMemo(
     () => steps
       .map((stepDef, index) => ({ index: index + 1, validator: validationMap[stepDef.id] || null }))
@@ -176,7 +218,11 @@ useEffect(() => {
 
   useEffect(() => {
     if (!stepErrors[step]) return;
-    const validation = validateStep(step, context);
+    const validatorNumber = getValidationStepNumber(step);
+    if (!validatorNumber) {
+      return;
+    }
+    const validation = validateStep(validatorNumber, context);
     if (validation.valid) {
       setStepErrors((prev) => {
         if (!prev[step]) return prev;
@@ -185,28 +231,34 @@ useEffect(() => {
         return next;
       });
     }
-  }, [flat, step, validateStep, context, stepErrors]);
+  }, [flat, step, validateStep, context, stepErrors, getValidationStepNumber]);
 
-  const ensureStepValid = useCallback(
-    (targetStep) => {
-      const validatorNumber = getValidationStepNumber(targetStep);
-      if (!validatorNumber) {
-        setStepErrors((prev) => {
+    const ensureStepValid = useCallback(
+      (targetStep) => {
+        const validatorNumber = getValidationStepNumber(targetStep);
+        if (!validatorNumber) {
+          setStepErrors((prev) => {
           if (!prev[targetStep]) return prev;
           const next = { ...prev };
           delete next[targetStep];
           return next;
         });
         return true;
-      }
-      const validation = validateStep(validatorNumber, context);
-      if (!validation.valid) {
-        setStepErrors((prev) => ({ ...prev, [targetStep]: validation.errors }));
-        return false;
-      }
-      setStepErrors((prev) => {
-        if (!prev[targetStep]) return prev;
-        const next = { ...prev };
+        }
+        const validation = validateStep(validatorNumber, context);
+        if (!validation.valid) {
+          setStepErrors((prev) => ({ ...prev, [targetStep]: validation.errors }));
+          if (import.meta?.env?.DEV && typeof console !== 'undefined') {
+            console.warn(
+              `[new-case] Paso ${targetStep} inválido`,
+              Object.assign({}, validation.errors),
+            );
+          }
+          return false;
+        }
+        setStepErrors((prev) => {
+          if (!prev[targetStep]) return prev;
+          const next = { ...prev };
         delete next[targetStep];
         return next;
       });
@@ -281,7 +333,7 @@ useEffect(() => {
   const currentStepDefinition = steps[step - 1] || steps[0];
   const currentStepId = currentStepDefinition?.id;
 
-  const primaryButtonDisabled = step === maxStep ? busy : (!currentValidation.valid || busy);
+  const primaryButtonDisabled = busy;
   const backDisabled = step <= minStep || busy;
   const nextButtonLabel = step === maxStep ? (busy ? 'Creando…' : 'Crear HC') : 'Siguiente';
 
@@ -352,6 +404,7 @@ useEffect(() => {
             grupos={GRUPOS_CONSULTA}
             value={flat}
             onChange={handleFieldChange}
+            errors={currentStepErrors}
           />
         )}
 
@@ -365,6 +418,7 @@ useEffect(() => {
               motivoDerivacion: flat.motivoDerivacion,
             }}
             onChange={handleMotivoChange}
+            errors={currentStepErrors}
           />
         )}
 
@@ -376,6 +430,7 @@ useEffect(() => {
             edad={edad}
             onChange={handleFieldChange}
             mode="antecedentes"
+            errors={currentStepErrors}
           />
         )}
 
@@ -387,6 +442,7 @@ useEffect(() => {
             edad={edad}
             onChange={handleFieldChange}
             mode="historia"
+            errors={currentStepErrors}
           />
         )}
 
@@ -406,6 +462,7 @@ useEffect(() => {
             edad={edad}
             onChange={handleFieldChange}
             mode="examen"
+            errors={currentStepErrors}
           />
         )}
 
@@ -432,6 +489,7 @@ useEffect(() => {
             edad={edad}
             onChange={handleFieldChange}
             mode="identificacion"
+            errors={currentStepErrors}
           />
         )}
       </main>

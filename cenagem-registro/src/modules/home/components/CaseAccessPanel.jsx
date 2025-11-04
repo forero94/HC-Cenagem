@@ -25,20 +25,15 @@ export default function CaseAccessPanel({
   const shouldShowResults = Boolean(query.length >= 2 || hasSearchResults || searchLoading);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 text-white">
       <div className="flex flex-wrap gap-2">
         <button
           onClick={onCreateCase}
-          className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium"
+          className="px-4 py-2 rounded-xl border border-white/40 !text-white hover:bg-white/10 transition text-sm font-medium"
         >
           + Nueva HC familiar
         </button>
-        <button
-          onClick={onOpenAnalytics}
-          className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm"
-        >
-          Ver tableros
-        </button>
+
       </div>
       <form
         onSubmit={handleSubmit}
@@ -49,13 +44,13 @@ export default function CaseAccessPanel({
           value={familyCodeValue}
           onChange={(event) => onFamilyCodeChange?.(event.target.value)}
           placeholder="Buscar HC por número, apellido o DNI"
-          className="flex-1 min-w-[220px] px-3 py-2 rounded-xl border border-slate-300 text-sm"
+          className="flex-1 min-w-[220px] px-3 py-2 rounded-xl border border-white/40 bg-white/10 text-sm text-white placeholder-white/60 transition focus:bg-white/15"
           autoComplete="off"
           aria-label="Buscar historia clínica"
         />
         <button
           type="submit"
-          className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium"
+          className="px-4 py-2 rounded-xl border border-white/40 !text-white hover:bg-white/10 transition text-sm font-medium"
         >
           Ingresar
         </button>
