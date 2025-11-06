@@ -227,6 +227,152 @@ function UploadTreePhotos({ disabled, onFiles }) {
   );
 }
 
+function UploadTicketMode({ ticketContext }) {
+  const [status, setStatus] = useState({ uploading: false, error: null, success: null });
+  const [recentUploads, setRecentUploads] = useState([]);
+  const [countdown, setCountdown] = useState('');
+
+  const expiresAt = useMemo(() => {
+    if (!ticketContext?.expiresAt) return null;
+    const value = new Date(ticketContext.expiresAt);
+    return Number.isNaN(value.getTime()) ? null : value;
+  }, [ticketContext?.expiresAt]);
+
+  useEffect(() => {
+    if (!expiresAt) {
+      setCountdown('');
+      return undefined;
+    }
+    const updateCountdown = () => {
+      const diff = expiresAt.getTime() - Date.now();
+      if (diff <= 0) {
+        setCountdown('Expiró');
+        return;
+      }
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      setCountdown(`${minutes}m ${String(seconds).padStart(2, '0')}s`);
+    };
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(interval);
+  }, [expiresAt]);
+
+  const handleUploadFiles = useCallback(
+    async (files) => {
+      if (!ticketContext?.familyId) {
+        setStatus({
+          uploading: false,
+          error: 'El ticket no está asociado a una familia. Pedí un nuevo código.',
+          success: null,
+        });
+        return;
+      }
+      const collection = Array.from(files || []);
+      if (!collection.length) return;
+
+      setStatus({ uploading: true, error: null, success: null });
+      for (const file of collection) {
+        try {
+          const base64Data = await fileToBase64(file);
+          await cenagemApi.createFamilyAttachment(ticketContext.familyId, {
+            category: TREE_CATEGORY,
+            fileName: file.name,
+            contentType: file.type || 'image/jpeg',
+            base64Data,
+            description: file.name,
+          });
+          setRecentUploads((prev) =>
+            [{ name: file.name, at: new Date().toISOString() }, ...prev].slice(0, 5),
+          );
+          setStatus({
+            uploading: true,
+            error: null,
+            success: `Foto "${file.name}" subida correctamente.`,
+          });
+        } catch (error) {
+          console.error('No se pudo subir la foto del árbol con ticket', error);
+          setStatus({
+            uploading: false,
+            error: `No se pudo subir "${file.name}". Intentá nuevamente.`,
+            success: null,
+          });
+          return;
+        }
+      }
+      setStatus((prev) => ({ ...prev, uploading: false }));
+    },
+    [ticketContext?.familyId],
+  );
+
+  if (!ticketContext?.familyId) {
+    return (
+      <div className="min-h-screen bg-slate-100 p-6 flex items-center justify-center">
+        <div className="max-w-md rounded-2xl border border-red-200 bg-white p-6 text-center shadow-sm">
+          <div className="text-base font-semibold text-red-600">Ticket inválido o vencido</div>
+          <p className="mt-2 text-sm text-slate-600">
+            Volvé a la HC y generá un nuevo código QR para continuar.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const familyCode = ticketContext.familyCode ?? '—';
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="mx-auto max-w-md space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="space-y-1">
+          <h1 className="text-lg font-semibold">HC {familyCode} · Árbol familiar</h1>
+          <div className="text-sm text-slate-600">Carga remota de fotos del árbol familiar.</div>
+          {countdown && (
+            <div className="text-xs text-slate-500">
+              {countdown === 'Expiró'
+                ? 'El acceso venció. Si necesitás seguir cargando fotos, pedí un nuevo código.'
+                : `El acceso vence en ${countdown}.`}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          Subí fotos del árbol desde tu galería o cámara. El equipo de CENAGEM podrá verlas
+          inmediatamente dentro de la historia clínica.
+        </div>
+
+        <UploadTreePhotos disabled={status.uploading} onFiles={handleUploadFiles} />
+
+        {status.uploading && (
+          <div className="text-xs text-slate-500 text-center">Subiendo fotos…</div>
+        )}
+
+        {status.error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+            {status.error}
+          </div>
+        )}
+
+        {status.success && !status.error && !status.uploading && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            {status.success}
+          </div>
+        )}
+
+        {recentUploads.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs font-semibold text-slate-600">Últimas fotos cargadas</div>
+            <ul className="mt-2 space-y-1 text-xs text-slate-500">
+              {recentUploads.map((item) => (
+                <li key={`${item.name}-${item.at}`}>{item.name}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StandardFamilyTreePage({ familyId, inline = false }) {
   const [ticketInfo, setTicketInfo] = useState(null);
   const [ticketError, setTicketError] = useState(null);
@@ -749,13 +895,8 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
 
 export default function FamilyTreePage({ familyId, inline = false }) {
   const sessionUser = useMemo(() => getUser(), []);
-  // TODO: Implement UploadTicketMode for tree photos if needed
-  // if (sessionUser?.scope === 'upload-ticket') {
-  //   return (
-  //     <UploadTicketMode
-  //       ticketContext={sessionUser?.uploadTicket ?? null}
-  //     />
-  //   );
-  // }
+  if (sessionUser?.scope === 'upload-ticket') {
+    return <UploadTicketMode ticketContext={sessionUser?.uploadTicket ?? null} />;
+  }
   return <StandardFamilyTreePage familyId={familyId} inline={inline} />;
 }

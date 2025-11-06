@@ -90,44 +90,48 @@ const formatISODate = (iso) => {
   return `${year}-${month}-${day}`;
 };
 
-const mapFamily = (detail) => ({
-  id: detail.id,
-  code: detail.code,
-  status: detail.status,
-  displayName: detail.displayName || '',
-  provincia: detail.province || '',
-  ciudad: detail.city || '',
-  address: detail.address || '',
-  tags: detail.tags || [],
-  motivo: detail.motive || null,
-  motivoNotas: detail.motive?.notes || '',
-  motivoPaciente: detail.motivePatient || '',
-  motivoDerivacion: detail.motiveDerivation || '',
-  motivoNarrativa: detail.motiveNarrative || '',
-  filiatoriosContacto: detail.contactInfo || {},
-  consanguinidad: detail.consanguinity || {},
-  antecedentesObstetricos: detail.obstetricHistory || null,
-  abuelos: detail.grandparents || {},
-  intake: detail.intake || {},
-  metadata: detail.metadata || {},
-  createdAt: detail.createdAt,
-  updatedAt: detail.updatedAt,
-  membersPreview: Array.isArray(detail.membersPreview)
-    ? detail.membersPreview.map((member) => ({
-        id: member.id,
-        rol: member.role || '',
-        initials: member.initials || '',
-        nombreCompleto: member.displayName || '',
-        documento: member.documentNumber || '',
-      }))
-    : [],
-  medicoAsignado:
-    detail.metadata?.medicoAsignado ||
-    detail.intake?.administrativo?.medicoAsignado ||
-    '',
-});
+const mapFamily = (detail) => {
+  const normalizedId = detail?.id != null ? String(detail.id) : '';
+  return {
+    id: normalizedId,
+    code: detail.code,
+    status: detail.status,
+    displayName: detail.displayName || '',
+    provincia: detail.province || '',
+    ciudad: detail.city || '',
+    address: detail.address || '',
+    tags: detail.tags || [],
+    motivo: detail.motive || null,
+    motivoNotas: detail.motive?.notes || '',
+    motivoPaciente: detail.motivePatient || '',
+    motivoDerivacion: detail.motiveDerivation || '',
+    motivoNarrativa: detail.motiveNarrative || '',
+    filiatoriosContacto: detail.contactInfo || {},
+    consanguinidad: detail.consanguinity || {},
+    antecedentesObstetricos: detail.obstetricHistory || null,
+    abuelos: detail.grandparents || {},
+    intake: detail.intake || {},
+    metadata: detail.metadata || {},
+    createdAt: detail.createdAt,
+    updatedAt: detail.updatedAt,
+    membersPreview: Array.isArray(detail.membersPreview)
+      ? detail.membersPreview.map((member) => ({
+          id: member.id,
+          rol: member.role || '',
+          initials: member.initials || '',
+          nombreCompleto: member.displayName || '',
+          documento: member.documentNumber || '',
+        }))
+      : [],
+    medicoAsignado:
+      detail.metadata?.medicoAsignado ||
+      detail.intake?.administrativo?.medicoAsignado ||
+      '',
+  };
+};
 
 const mapMember = (member) => {
+  const normalizedMemberId = member?.id != null ? String(member.id) : '';
   const nombreCompleto = [member.givenName, member.middleName, member.lastName]
     .filter(Boolean)
     .join(' ')
@@ -143,9 +147,16 @@ const mapMember = (member) => {
           ? rawNotes.list
           : [];
 
+  const normalizedFamilyId =
+    member.familyId ||
+    member.family?.id ||
+    member.family?.familyId ||
+    member.metadata?.familyId ||
+    null;
+
   return {
-    id: member.id,
-    familyId: member.familyId,
+    id: normalizedMemberId,
+    familyId: normalizedFamilyId ? String(normalizedFamilyId) : null,
     rol: member.role || member.relationship || '',
     relationship: member.relationship || '',
     filiatorios: {
@@ -427,9 +438,10 @@ export function useCenagemStore() {
       const mapped = mapFamilyDetailFromApi(detail);
       queryClient.setQueryData(queryKeys.familyDetail(mapped.family.id), mapped);
       queryClient.setQueryData(queryKeys.families(), (prev = []) => upsertFamily(prev, mapped.family));
+      bumpCacheVersion();
       return mapped;
     },
-    [queryClient],
+    [queryClient, bumpCacheVersion],
   );
 
   const refreshFamilies = useCallback(async () => {
@@ -632,6 +644,7 @@ export function useCenagemStore() {
             ...detail,
             attachments: mapped,
           });
+          bumpCacheVersion();
         }
         return mapped;
       } catch (err) {
@@ -639,7 +652,7 @@ export function useCenagemStore() {
         throw err;
       }
     },
-    [ensureFamilyDetail, queryClient],
+    [ensureFamilyDetail, queryClient, bumpCacheVersion],
   );
 
   const createAttachment = useCallback(

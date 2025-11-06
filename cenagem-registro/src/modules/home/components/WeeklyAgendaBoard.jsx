@@ -5,7 +5,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildWeeklyAgendaData,
   getMemberDisplayName,
-  getStatusBadgeColor,
   normalizePrimeraConsultaInfo,
 } from '@/modules/home/agenda';
 
@@ -107,7 +106,6 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
         {week.days.map((day) => {
           const enrichedAppointments = day.appointments.map((item) => {
             const member = item.memberId ? membersById[item.memberId] : null;
-            const family = item.familyId ? familiesById[item.familyId] : null;
             const primeraInfo = normalizePrimeraConsultaInfo(
               item.primeraConsultaInfo
                 || (item.metadata && typeof item.metadata === 'object' ? item.metadata.primeraConsultaInfo : null),
@@ -115,26 +113,61 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
             const primeraNombre = primeraInfo
               ? `${primeraInfo.nombre || ''} ${primeraInfo.apellido || ''}`.trim()
               : '';
-            const patientName = item.primeraConsulta
-              ? ['Primera consulta', primeraNombre].filter(Boolean).join(' · ')
+            const patientNameRaw = item.primeraConsulta
+              ? primeraNombre || 'Paciente sin datos'
               : getMemberDisplayName(member);
+            const patientName = patientNameRaw || 'Paciente sin datos';
+            const primeraMotivo = primeraInfo?.motivoGroupLabel || item.motivo || '';
+            const followUpDetail = item.motivo || '';
             return {
-              ...item,
+              id: item.id,
               patientName,
-              familyCode: family?.code || null,
-              familyDisplay: family
-                ? `HC ${family.code}`
-                : item.primeraConsulta
-                ? 'Sin HC asignada'
-                : 'HC sin datos',
-              primeraConsultaInfo: primeraInfo,
+              primeraConsulta: Boolean(item.primeraConsulta),
+              sobreturno: Boolean(item.sobreturno),
+              motivoLabel: Boolean(item.primeraConsulta) ? primeraMotivo : followUpDetail,
             };
           });
           const isSelected = selectedDate === day.isoDate;
+          const firstTimeAppointments = enrichedAppointments.filter((item) => Boolean(item.primeraConsulta));
+          const followUpAppointments = enrichedAppointments.filter((item) => !item.primeraConsulta);
+          const showGroupedSections = firstTimeAppointments.length > 0 && followUpAppointments.length > 0;
+
+          const renderAppointmentsList = (items) => {
+            if (!items.length) {
+              return null;
+            }
+            return (
+              <div className="flex flex-col divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+                {items.map((appointment) => (
+                  <div key={appointment.id} className="px-3 py-2 text-sm text-slate-900">
+                    <div className="truncate font-medium">{appointment.patientName}</div>
+                    {appointment.motivoLabel && (
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {appointment.motivoLabel}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          };
+
+          const availableSlotsCount = day.futureSlots.length;
+          let availabilityClass = 'bg-slate-50/60 border-slate-200';
+          if (!day.isPast) {
+            if (availableSlotsCount === 0) {
+              availabilityClass = 'bg-rose-50 border-rose-300';
+            } else if (availableSlotsCount <= 3) {
+              availabilityClass = 'bg-amber-50 border-amber-300';
+            } else {
+              availabilityClass = 'bg-emerald-50 border-emerald-300';
+            }
+          }
+
           return (
             <div
               key={day.isoDate}
-              className={`rounded-2xl border border-slate-200 bg-slate-50/60 p-3 flex flex-col gap-2 ${isSelected ? 'border-slate-900 ring-2 ring-slate-900/20 bg-white' : ''}`}
+              className={`rounded-2xl border ${availabilityClass} p-3 flex flex-col gap-2 ${isSelected ? 'border-slate-900 ring-2 ring-slate-900/20 bg-white' : ''}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -160,49 +193,29 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
 
               <div className="flex flex-col gap-2">
                 {enrichedAppointments.length ? (
-                  enrichedAppointments.map((item) => {
-                    const statusColor = getStatusBadgeColor(item.estado);
-                    return (
-                      <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-2 flex flex-col gap-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-slate-900">{item.time || 'Sin hora'}</span>
-                          <span className={`text-[10px] uppercase tracking-wide px-2 py-1 rounded-full ${statusColor}`}>
-                            {item.estado}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-700">{item.patientName}</div>
-                        <div className="text-[10px] text-slate-500">{item.familyDisplay}</div>
-                        {item.primeraConsulta && item.primeraConsultaInfo && (
-                          <div className="text-[10px] text-slate-500 flex flex-col gap-0.5">
-                            <span>
-                              Paciente:{' '}
-                              {item.primeraConsultaInfo.nombre || item.primeraConsultaInfo.apellido
-                                ? `${item.primeraConsultaInfo.nombre || ''} ${item.primeraConsultaInfo.apellido || ''}`.trim()
-                                : 'Sin datos'}
-                              {item.primeraConsultaInfo.edad ? ` · ${item.primeraConsultaInfo.edad} años` : ''}
-                            </span>
-                            {item.primeraConsultaInfo.motivoGroupLabel && (
-                              <span className="text-sky-700">Motivo: {item.primeraConsultaInfo.motivoGroupLabel}</span>
-                            )}
+                  <div className="flex flex-col gap-2">
+                    {firstTimeAppointments.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        {showGroupedSections && (
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Consultas de primera vez
                           </div>
                         )}
-                        {(item.primeraConsulta || item.sobreturno) && (
-                          <div className="flex flex-wrap gap-1">
-                            {item.primeraConsulta && (
-                              <span className="text-[9px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">
-                                Primera consulta
-                              </span>
-                            )}
-                            {item.sobreturno && (
-                              <span className="text-[9px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                                Sobreturno
-                              </span>
-                            )}
-                          </div>
-                        )}
+                        {renderAppointmentsList(firstTimeAppointments)}
                       </div>
-                    );
-                  })
+                    )}
+                    {showGroupedSections && <div className="border-t border-dashed border-slate-200" />}
+                    {followUpAppointments.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        {showGroupedSections && (
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Consultas programadas
+                          </div>
+                        )}
+                        {renderAppointmentsList(followUpAppointments)}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="text-xs text-slate-500">Sin turnos agendados</div>
                 )}

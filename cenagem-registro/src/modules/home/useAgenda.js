@@ -33,10 +33,14 @@ const mapAppointmentFromApi = (appointment) => {
     typeof appointment.sobreturno === 'boolean'
       ? appointment.sobreturno
       : Boolean(metadata.sobreturno);
+  const normalizedAppointmentId = appointment?.id != null ? String(appointment.id) : undefined;
+  const normalizedFamilyId = derivedFamilyId != null ? String(derivedFamilyId) : null;
+  const normalizedMemberId = appointment?.memberId != null ? String(appointment.memberId) : null;
+
   return {
-    id: appointment.id,
-    familyId: derivedFamilyId,
-    memberId: appointment.memberId,
+    id: normalizedAppointmentId || appointment.id,
+    familyId: normalizedFamilyId,
+    memberId: normalizedMemberId,
     date: scheduled ? formatISODateLocal(scheduled) : appointment.date,
     time: scheduled
       ? `${String(scheduled.getHours()).padStart(2, '0')}:${String(

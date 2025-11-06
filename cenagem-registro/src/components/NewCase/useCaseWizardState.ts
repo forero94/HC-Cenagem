@@ -17,10 +17,7 @@ import {
   type CaseWizardFlat,
   type CaseWizardSectionId,
 } from './caseWizard.generated';
-import {
-  CASE_WIZARD_MESSAGES,
-  type CaseWizardMessageKey,
-} from './caseWizard.messages';
+import { type CaseWizardMessageKey } from './caseWizard.messages';
 
 type SectionFieldMap = typeof CASE_WIZARD_SECTIONS;
 type SectionFieldKey<S extends CaseWizardSectionId> = SectionFieldMap[S][number];
@@ -86,33 +83,46 @@ const SECTION_DEFAULTS: CaseWizardSectionsState = CASE_WIZARD_SECTION_IDS.reduce
   {} as CaseWizardSectionsState,
 );
 
-const requiredMessage = (key: CaseWizardMessageKey, min = 1) =>
-  z.string().trim().min(min, CASE_WIZARD_MESSAGES[key]);
+const optionalField = (_key: CaseWizardMessageKey, _min = 1) =>
+  z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) =>
+      typeof value === 'string' ? value.trim() : value ?? '',
+    );
 
-const STEP1_SCHEMA = z.object({
-  agNumber: requiredMessage('agNumber'),
-  pacienteNombre: requiredMessage('pacienteNombre'),
-  pacienteDni: requiredMessage('pacienteDni'),
-});
+const STEP1_SCHEMA = z
+  .object({
+    agNumber: optionalField('agNumber'),
+    pacienteNombre: optionalField('pacienteNombre'),
+    pacienteDni: optionalField('pacienteDni'),
+  })
+  .passthrough();
 
-const STEP2_SCHEMA = z.object({
-  motivoGroup: requiredMessage('motivoGroup'),
-  motivoDetail: requiredMessage('motivoDetail'),
-  motivoPaciente: requiredMessage('motivoPaciente', 10),
-});
+const STEP2_SCHEMA = z
+  .object({
+    motivoGroup: optionalField('motivoGroup'),
+    motivoDetail: optionalField('motivoDetail'),
+    motivoFuenteDerivacion: optionalField('motivoFuenteDerivacion'),
+    motivoPaciente: optionalField('motivoPaciente', 10),
+  })
+  .passthrough();
 
-const STEP3_SCHEMA = z.object({
-  enfInicioContexto: requiredMessage('enfInicioContexto', 10),
-  enfEvolucionActual: requiredMessage('enfEvolucionActual', 10),
-  enfManifestacionesClaves: requiredMessage('enfManifestacionesClaves', 10),
-});
+const STEP3_SCHEMA = z
+  .object({
+    enfInicioContexto: optionalField('enfInicioContexto', 10),
+    enfEvolucionActual: optionalField('enfEvolucionActual', 10),
+    enfManifestacionesClaves: optionalField('enfManifestacionesClaves', 10),
+  })
+  .passthrough();
 
-const STEP_IDENT_SCHEMA = z.object({
-  agNumber: requiredMessage('agNumber'),
-  pacienteNombre: requiredMessage('pacienteNombre'),
-  pacienteDni: requiredMessage('pacienteDni'),
-  consultaFecha: requiredMessage('consultaFecha'),
-});
+const STEP_IDENT_SCHEMA = z
+  .object({
+    agNumber: optionalField('agNumber'),
+    pacienteNombre: optionalField('pacienteNombre'),
+    pacienteDni: optionalField('pacienteDni'),
+    consultaFecha: optionalField('consultaFecha'),
+  })
+  .passthrough();
 
 const formatIssues = (issues: ZodIssue[] | undefined): StepValidationErrors => {
   if (!issues) return {};
@@ -154,55 +164,7 @@ const runStepValidators = ({
     return runSchema(STEP3_SCHEMA, data);
   }
   if (step === 4) {
-    const errors: StepValidationErrors = {};
-    const groupId = context?.groupId ?? undefined;
-    if (groupId === 'prenatal') {
-      if (!data.embarazoControlPrenatal?.trim()) {
-        errors.embarazoControlPrenatal =
-          'Registrá la semana del diagnóstico y tipo de control realizado';
-      }
-      const hasPrenatalHallazgos =
-        data.estudiosEcoPrimerTrimestre?.trim()
-        || data.estudiosEcoSegundoTrimestre?.trim()
-        || data.estudiosEcoDoppler?.trim()
-        || data.estudiosScreening?.trim()
-        || data.estudiosScreeningResultados?.trim()
-        || data.estudiosInvasivos?.trim()
-        || data.estudiosInvasivosHallazgos?.trim();
-      if (!hasPrenatalHallazgos) {
-        errors.estudiosEcoSegundoTrimestre =
-          'Detallá hallazgos ecográficos, cribados o estudios invasivos relevantes';
-      }
-    }
-    if (groupId === 'fertilidad') {
-      if (!data.reproDiagnosticos?.trim()) {
-        errors.reproDiagnosticos =
-          'Ingresá el diagnóstico o hallazgo reproductivo principal';
-      }
-      const hasReproContext =
-        data.reproTratamientos?.trim()
-        || data.reproEstudiosPrevios?.trim()
-        || data.reproPlan?.trim();
-      if (!hasReproContext) {
-        errors.reproTratamientos =
-          'Detallá tratamientos realizados, estudios previos o plan propuesto';
-      }
-    }
-    if (groupId === 'onco') {
-      if (!data.oncoArbolFamiliar?.trim()) {
-        errors.oncoArbolFamiliar =
-          'Describí la historia familiar oncológica relevante';
-      }
-      const hasOncoAnalisis =
-        data.oncoRiesgoModelos?.trim()
-        || data.oncoEstudiosDisponibles?.trim()
-        || data.oncoPlanSeguimiento?.trim();
-      if (!hasOncoAnalisis) {
-        errors.oncoRiesgoModelos =
-          'Documentá modelos de riesgo, estudios disponibles o plan de seguimiento';
-      }
-    }
-    return errors;
+    return {};
   }
   if (step === 5) {
     return runSchema(STEP_IDENT_SCHEMA, data);

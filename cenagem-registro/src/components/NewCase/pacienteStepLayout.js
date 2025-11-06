@@ -17,15 +17,17 @@ const ANTECEDENTES_SECTIONS = [
 ];
 
 const EXAM_SECTIONS = ['antropometria', 'examenGenetico'];
+const FAMILIA_SECTIONS = ['familia', 'consanguinidad', 'abuelos'];
 
 export function getPacienteStepAvailability(secciones = []) {
   const set = new Set(secciones);
   return {
     antecedentes: ANTECEDENTES_SECTIONS.some((key) => set.has(key)),
+    familia: FAMILIA_SECTIONS.some((key) => set.has(key)),
     historia: true,
     examen: EXAM_SECTIONS.some((key) => set.has(key)),
     identificacion: IDENTIFICATION_SECTIONS.some((key) => set.has(key)),
   };
 }
 
-export { IDENTIFICATION_SECTIONS, ANTECEDENTES_SECTIONS, EXAM_SECTIONS };
+export { IDENTIFICATION_SECTIONS, ANTECEDENTES_SECTIONS, EXAM_SECTIONS, FAMILIA_SECTIONS };

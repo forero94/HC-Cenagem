@@ -13,9 +13,11 @@
   "dependencies": {
     "@tanstack/react-query": "^5.90.6",
     "@xyflow/react": "^12.9.2",
+    "date-fns": "^4.1.0",
     "lottie-react": "^2.4.1",
     "qrcode": "^1.5.4",
     "react": "^19.1.1",
+    "react-day-picker": "^9.11.1",
     "react-dom": "^19.1.1",
     "zod": "^4.1.8"
   },

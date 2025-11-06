@@ -1084,6 +1084,7 @@ export default function HomePage({ user, onLogout }) {
         selectedDate={selectedDate}
         onDateChange={setSelectedDate}
         appointments={agendaForSelectedDate}
+        allAppointments={agenda}
         membersOptions={agendaMembersOptions}
         membersById={membersById}
         familiesById={familiesById}

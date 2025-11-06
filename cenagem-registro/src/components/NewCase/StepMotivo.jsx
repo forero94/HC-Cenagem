@@ -69,6 +69,20 @@ export default function StepMotivo({ grupos, value, onChange, errors = {} }) {
             <span className="text-[11px] text-rose-600">{errorFor('motivoDetail')}</span>
           ) : null}
         </label>
+        <label className="md:col-span-3 flex flex-col gap-1">
+          <span className="text-xs text-slate-500">Fuente de derivación</span>
+          <input
+            className={controlClass('motivoFuenteDerivacion', 'rounded-xl border border-slate-300 px-3 py-2 text-sm')}
+            aria-label="Fuente de derivación"
+            value={value.motivoFuenteDerivacion || ''}
+            onChange={(e) => onChange({ motivoFuenteDerivacion: e.target.value })}
+            placeholder="Ej.: Pediatría del hospital, control obstétrico, laboratorio externo…"
+            aria-invalid={errorFor('motivoFuenteDerivacion') ? 'true' : undefined}
+          />
+          {errorFor('motivoFuenteDerivacion') ? (
+            <span className="text-[11px] text-rose-600">{errorFor('motivoFuenteDerivacion')}</span>
+          ) : null}
+        </label>
       </div>
 
       {!current && (

@@ -82,14 +82,14 @@ export const GRUPOS_CONSULTA = [
 
 // Campos visibles por grupo (base). El Paso 3 añade sus propios campos específicos.
 export const BASE_SECCIONES_VISIBLES = {
-  di_rm:        ['id', 'motivo', 'paciente', 'perinatal', 'neurodesarrollo', 'antropometria', 'examenGenetico', 'consanguinidad', 'familia'],
-  talla:        ['id', 'motivo', 'paciente', 'antropometria', 'consanguinidad', 'familia'],
-  dismorfias:   ['id', 'motivo', 'paciente', 'antropometria', 'examenGenetico', 'consanguinidad', 'familia'],
-  prenatal:     ['id', 'motivo', 'paciente', 'prenatal', 'obstetricos'],
-  fertilidad:   ['id', 'motivo', 'paciente', 'reproductivo', 'consanguinidad', 'familia'],
-  onco:         ['id', 'motivo', 'paciente', 'oncologia', 'familia'],
-  otros:        ['id', 'motivo', 'paciente', 'examenGenetico', 'familia'],
-  monogenica: ['id','motivo','paciente','antropometria','examenGenetico','consanguinidad','familia'],
+  di_rm:      ['id', 'motivo', 'paciente', 'perinatal', 'neurodesarrollo', 'antropometria', 'examenGenetico', 'consanguinidad', 'familia', 'abuelos'],
+  talla:      ['id', 'motivo', 'paciente', 'antropometria', 'consanguinidad', 'familia', 'abuelos'],
+  dismorfias: ['id', 'motivo', 'paciente', 'antropometria', 'examenGenetico', 'consanguinidad', 'familia', 'abuelos'],
+  prenatal:   ['id', 'motivo', 'paciente', 'prenatal', 'obstetricos', 'consanguinidad', 'familia', 'abuelos'],
+  fertilidad: ['id', 'motivo', 'paciente', 'reproductivo', 'consanguinidad', 'familia', 'abuelos'],
+  onco:       ['id', 'motivo', 'paciente', 'oncologia', 'consanguinidad', 'familia', 'abuelos'],
+  otros:      ['id', 'motivo', 'paciente', 'examenGenetico', 'consanguinidad', 'familia', 'abuelos'],
+  monogenica: ['id', 'motivo', 'paciente', 'antropometria', 'examenGenetico', 'consanguinidad', 'familia', 'abuelos'],
 };
 
 // Reglas extra por edad (ejemplo)

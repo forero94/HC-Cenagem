@@ -9,6 +9,7 @@ const FamilyPage = React.lazy(() => import('@/routes/FamilyPage.jsx'));
 const FamilyStudiesPage = React.lazy(() => import('@/routes/FamilyStudiesPage.jsx'));
 const GeneticsPage = React.lazy(() => import('@/routes/GeneticsPage.jsx'));
 const PhotosPage = React.lazy(() => import('@/routes/PhotosPage.jsx'));
+const FamilyTreePage = React.lazy(() => import('@/routes/FamilyTreePage.jsx'));
 const UsersPage = React.lazy(() => import('@/routes/UsersPage.jsx'));
 
 function parseLocationSegments(source) {
@@ -44,6 +45,7 @@ function parseHash() {
   if (seg0 === 'family' && seg1 && seg2 === 'studies') return { name: 'family-studies', familyId: seg1, params };
   if (seg0 === 'family' && seg1 && seg2 === 'genetics') return { name: 'family-genetics', familyId: seg1, params };
   if (seg0 === 'family' && seg1 && seg2 === 'photos') return { name: 'family-photos', familyId: seg1, params };
+  if (seg0 === 'family' && seg1 && seg2 === 'tree') return { name: 'family-tree', familyId: seg1, params };
   if (seg0 === 'family' && seg1) return { name: 'family', familyId: seg1, params };
   if (seg0 === 'analytics') return { name: 'analytics', params };
   if (seg0 === 'users') return { name: 'users', params };
@@ -86,6 +88,14 @@ export default function AppRoutes({ user = { email: 'genetista@cenagem.gob.ar' }
     return (
       <Suspense fallback={<div className="p-6">Cargando fotos…</div>}>
         <PhotosPage familyId={route.familyId} initialMemberId={route.params?.member || ''} />
+      </Suspense>
+    );
+  }
+
+  if (route.name === 'family-tree') {
+    return (
+      <Suspense fallback={<div className="p-6">Cargando árbol…</div>}>
+        <FamilyTreePage familyId={route.familyId} />
       </Suspense>
     );
   }

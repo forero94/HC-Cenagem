@@ -1,9 +1,11 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { GRUPOS_CONSULTA, postprocessSecciones, getGroupIdFromDetail } from '@/lib/gruposConsulta';
 import StepAdministrativo from './StepAdministrativo';
 import StepMotivo from './StepMotivo';
 import StepPaciente from './StepPaciente';
+import StepFamilia from './StepFamilia';
 import { getPacienteStepAvailability } from './pacienteStepLayout';
+import StepExamen from './StepExamen';
 import StepGrupoEspecifico from './StepGrupoEspecifico';
 import StepEstudiosComplementarios from './StepEstudiosComplementarios';
 import StepPrimeraEvolucion from './StepPrimeraEvolucion';
@@ -78,6 +80,27 @@ const mapClinicalStep = (stepConfig, availability, groupId) => {
 const buildClinicalSteps = (availability, groupId) =>
   clinicalStepsConfig.map((stepConfig) => mapClinicalStep(stepConfig, availability, groupId));
 
+const SECTION_STYLES = {
+  administrativo: 'border-sky-300 bg-white',
+  motivo: 'border-indigo-300 bg-white',
+  antecedentes: 'border-amber-300 bg-white',
+  historia: 'border-emerald-300 bg-white',
+  preguntas: 'border-purple-300 bg-white',
+  examen: 'border-rose-300 bg-white',
+  estudios: 'border-blue-300 bg-white',
+  primera: 'border-slate-300 bg-white',
+  identificacion: 'border-teal-300 bg-white',
+};
+
+const BUTTON_BASE =
+  'inline-flex h-10 items-center justify-center rounded-xl border px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
+const BUTTON_PRIMARY = `${BUTTON_BASE} border-slate-900 bg-slate-900 text-white focus-visible:outline-slate-500 hover:bg-slate-800`;
+const BUTTON_SECONDARY = `${BUTTON_BASE} border-slate-300 bg-white text-slate-700 hover:bg-slate-100 focus-visible:outline-slate-400`;
+const BUTTON_PILL_BASE =
+  'inline-flex h-9 items-center justify-center rounded-full border px-4 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
+const BUTTON_PILL_ACTIVE = `${BUTTON_PILL_BASE} border-slate-900 bg-slate-900 text-white focus-visible:outline-slate-500`;
+const BUTTON_PILL_INACTIVE = `${BUTTON_PILL_BASE} border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus-visible:outline-slate-400`;
+
 export default function NewCaseWizard({
   currentUser,
   busy = false,
@@ -106,6 +129,21 @@ const totalSteps = showAdministrativeStep ? 9 : 8;
 const startStep = Math.max(1, Math.min(totalSteps, normalizeInitialStep));
 const [step, setStep] = useState(startStep);
 const [stepErrors, setStepErrors] = useState({});
+  const sectionRefs = useRef({});
+  const refCallbacks = useRef(new Map());
+
+  const getSectionRef = useCallback((id) => {
+    if (!refCallbacks.current.has(id)) {
+      refCallbacks.current.set(id, (node) => {
+        if (node) {
+          sectionRefs.current[id] = node;
+        } else {
+          delete sectionRefs.current[id];
+        }
+      });
+    }
+    return refCallbacks.current.get(id);
+  }, []);
 
 useEffect(() => {
   setStep(startStep);
@@ -177,8 +215,27 @@ useEffect(() => {
     [showAdministrativeStep, clinicalSteps, resolvedGroupId],
   );
 
+  const scrollToStepIndex = useCallback(
+    (target) => {
+      const definition = steps[target - 1];
+      if (!definition) return;
+      const node = sectionRefs.current[definition.id];
+      if (node?.scrollIntoView) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    },
+    [steps],
+  );
+
   const maxStep = steps.length;
   const minStep = 1;
+  const stepIndexById = useMemo(() => {
+    const map = new Map();
+    steps.forEach((definition, index) => {
+      map.set(definition.id, index + 1);
+    });
+    return map;
+  }, [steps]);
   const validationMap = useMemo(() => ({
       administrativo: 1,
       motivo: 2,
@@ -202,19 +259,45 @@ useEffect(() => {
     });
   }, [steps.length]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.IntersectionObserver) {
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const id = entry.target.getAttribute('data-step-id');
+          if (!id) return;
+          const index = stepIndexById.get(id);
+          if (!index) return;
+          setStep((prev) => (prev === index ? prev : index));
+        });
+      },
+      {
+        root: null,
+        rootMargin: '-45% 0px -45% 0px',
+        threshold: 0.3,
+      },
+    );
+
+    const nodes = steps
+      .map((definition) => sectionRefs.current[definition.id])
+      .filter(Boolean);
+
+    nodes.forEach((node) => observer.observe(node));
+
+    return () => {
+      nodes.forEach((node) => observer.unobserve(node));
+      observer.disconnect();
+    };
+  }, [steps, stepIndexById]);
+
   const getValidationStepNumber = useCallback((stepIndex) => {
     const stepDef = steps[stepIndex - 1];
     if (!stepDef) return null;
     return validationMap[stepDef.id] || null;
   }, [steps, validationMap]);
-
-  const currentValidation = useMemo(() => {
-    const validatorNumber = getValidationStepNumber(step);
-    if (!validatorNumber) {
-      return { valid: true, errors: {} };
-    }
-    return validateStep(validatorNumber, context);
-  }, [validateStep, context, getValidationStepNumber, step]);
 
   useEffect(() => {
     if (!stepErrors[step]) return;
@@ -276,15 +359,17 @@ useEffect(() => {
   }, [updateMany]);
 
   const handleAdvance = useCallback(() => {
-    if (ensureStepValid(step)) {
-      setStep((prev) => Math.min(maxStep, prev + 1));
-    }
-  }, [ensureStepValid, step, maxStep]);
+    if (!ensureStepValid(step)) return;
+    const next = Math.min(maxStep, step + 1);
+    setStep(next);
+    scrollToStepIndex(next);
+  }, [ensureStepValid, step, maxStep, scrollToStepIndex]);
 
   const handleFinalSubmit = useCallback(() => {
     for (const target of validationStepIndexes) {
       if (!ensureStepValid(target)) {
         setStep(target);
+        scrollToStepIndex(target);
         return;
       }
     }
@@ -301,12 +386,19 @@ useEffect(() => {
   }, [step, maxStep, handleAdvance, handleFinalSubmit]);
 
   const handleBack = useCallback(() => {
-    setStep((prev) => Math.max(minStep, prev - 1));
-  }, [minStep]);
+    const previous = Math.max(minStep, step - 1);
+    setStep(previous);
+    scrollToStepIndex(previous);
+  }, [minStep, step, scrollToStepIndex]);
 
-  const goToStep = useCallback((target) => {
-    setStep(Math.max(minStep, Math.min(maxStep, target)));
-  }, [minStep, maxStep]);
+  const goToStep = useCallback(
+    (target) => {
+      const bounded = Math.max(minStep, Math.min(maxStep, target));
+      setStep(bounded);
+      scrollToStepIndex(bounded);
+    },
+    [minStep, maxStep, scrollToStepIndex],
+  );
 
   const handleCancelClick = useCallback(() => {
     clearAutosave();
@@ -314,6 +406,119 @@ useEffect(() => {
       onCancel(flat);
     }
   }, [clearAutosave, onCancel, flat]);
+
+  const renderStepContent = useCallback(
+    (definition, index) => {
+      const stepIndex = index + 1;
+      const errorsForStep = stepErrors[stepIndex] || {};
+      switch (definition.id) {
+        case 'administrativo':
+          return (
+            <StepAdministrativo
+              grupos={GRUPOS_CONSULTA}
+              value={flat}
+              onChange={handleFieldChange}
+              errors={errorsForStep}
+            />
+          );
+        case 'motivo':
+          return (
+            <StepMotivo
+              grupos={GRUPOS_CONSULTA}
+              value={{
+                motivoGroup: flat.motivoGroup,
+                motivoDetail: flat.motivoDetail,
+                motivoPaciente: flat.motivoPaciente,
+                motivoDerivacion: flat.motivoDerivacion,
+                motivoFuenteDerivacion: flat.motivoFuenteDerivacion,
+              }}
+              onChange={handleMotivoChange}
+              errors={errorsForStep}
+            />
+          );
+        case 'antecedentes':
+          return (
+            <StepPaciente
+              secciones={secciones}
+              grupos={GRUPOS_CONSULTA}
+              value={flat}
+              edad={edad}
+              onChange={handleFieldChange}
+              mode="antecedentes"
+              errors={errorsForStep}
+            />
+          );
+        case 'familia':
+          return (
+            <StepFamilia
+              value={flat}
+              secciones={secciones}
+              onChange={handleFieldChange}
+            />
+          );
+        case 'historia':
+          return (
+            <StepPaciente
+              secciones={secciones}
+              grupos={GRUPOS_CONSULTA}
+              value={flat}
+              edad={edad}
+              onChange={handleFieldChange}
+              mode="historia"
+              errors={errorsForStep}
+            />
+          );
+        case 'preguntas':
+          return (
+            <StepGrupoEspecifico
+              groupId={resolvedGroupId}
+              value={flat}
+              onChange={handleFieldChange}
+            />
+          );
+          case 'examen':
+            return (
+              <StepExamen
+                value={flat}
+                onChange={handleFieldChange}
+              />
+            );
+        case 'estudios':
+          return (
+            <StepEstudiosComplementarios
+              groupId={resolvedGroupId}
+              value={flat}
+              onChange={handleFieldChange}
+            />
+          );
+        case 'primera':
+          return <StepPrimeraEvolucion value={flat} onChange={handleFieldChange} />;
+        case 'identificacion':
+          return (
+            <StepPaciente
+              secciones={secciones}
+              grupos={GRUPOS_CONSULTA}
+              value={flat}
+              edad={edad}
+              onChange={handleFieldChange}
+              mode="identificacion"
+              errors={errorsForStep}
+            />
+          );
+        default:
+          return null;
+      }
+    },
+    [
+      stepErrors,
+      flat,
+      handleFieldChange,
+      handleMotivoChange,
+      secciones,
+      edad,
+      resolvedGroupId,
+    ],
+  );
 
   const stepShortcuts = useMemo(
     () => steps
@@ -330,12 +535,9 @@ useEffect(() => {
   const currentStepErrors = stepErrors[step] || {};
   const errorMessages = Object.values(currentStepErrors);
   const autosaveMessage = useMemo(() => getAutosaveMessage(autosaveState), [autosaveState]);
-  const currentStepDefinition = steps[step - 1] || steps[0];
-  const currentStepId = currentStepDefinition?.id;
-
   const primaryButtonDisabled = busy;
   const backDisabled = step <= minStep || busy;
-  const nextButtonLabel = step === maxStep ? (busy ? 'Creando…' : 'Crear HC') : 'Siguiente';
+  const nextButtonLabel = step === maxStep ? (busy ? 'Creando…' : 'Crear HC') : 'Ir a la siguiente sección';
 
   return (
     <div className="min-h-screen w-full bg-slate-50">
@@ -348,7 +550,7 @@ useEffect(() => {
           <button
             type="button"
             onClick={handleCancelClick}
-            className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
+            className={BUTTON_SECONDARY}
           >
             Cancelar
           </button>
@@ -362,9 +564,14 @@ useEffect(() => {
             const number = index + 1;
             const isActive = step === number;
             const isEnabled = definition.enabled !== false;
-            const disabled = (!isEnabled && !isActive) || busy;
+            const disabled = busy;
             const display = `${number}. ${definition.label}`;
             const spacingClass = (definition.id === 'preguntas' || definition.id === 'identificacion') ? 'ml-4' : '';
+            const className = isActive
+              ? BUTTON_PILL_ACTIVE
+              : isEnabled
+                ? BUTTON_PILL_INACTIVE
+                : `${BUTTON_PILL_INACTIVE} opacity-60`;
             return (
               <button
                 key={definition.id}
@@ -372,10 +579,7 @@ useEffect(() => {
                 onClick={() => goToStep(number)}
                 disabled={disabled}
                 aria-current={isActive ? 'page' : undefined}
-                className={`${spacingClass} ${isActive
-                  ? 'px-3 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white font-semibold shadow-sm'
-                  : 'px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:opacity-60'
-                }`}
+                className={`${spacingClass} ${className}`}
               >
                 {display}
               </button>
@@ -390,7 +594,7 @@ useEffect(() => {
             role="alert"
             className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
           >
-            <p className="font-semibold">Revisá los campos obligatorios antes de continuar:</p>
+            <p className="font-semibold">Revisá los campos antes de continuar:</p>
             <ul className="mt-1 list-disc pl-4 space-y-1">
               {errorMessages.map((message, index) => (
                 <li key={`${message}-${index}`}>{message}</li>
@@ -399,99 +603,30 @@ useEffect(() => {
           </div>
         )}
 
-        {currentStepId === 'administrativo' && (
-          <StepAdministrativo
-            grupos={GRUPOS_CONSULTA}
-            value={flat}
-            onChange={handleFieldChange}
-            errors={currentStepErrors}
-          />
-        )}
-
-        {currentStepId === 'motivo' && (
-          <StepMotivo
-            grupos={GRUPOS_CONSULTA}
-            value={{
-              motivoGroup: flat.motivoGroup,
-              motivoDetail: flat.motivoDetail,
-              motivoPaciente: flat.motivoPaciente,
-              motivoDerivacion: flat.motivoDerivacion,
-            }}
-            onChange={handleMotivoChange}
-            errors={currentStepErrors}
-          />
-        )}
-
-        {currentStepId === 'antecedentes' && (
-          <StepPaciente
-            secciones={secciones}
-            grupos={GRUPOS_CONSULTA}
-            value={flat}
-            edad={edad}
-            onChange={handleFieldChange}
-            mode="antecedentes"
-            errors={currentStepErrors}
-          />
-        )}
-
-        {currentStepId === 'historia' && (
-          <StepPaciente
-            secciones={secciones}
-            grupos={GRUPOS_CONSULTA}
-            value={flat}
-            edad={edad}
-            onChange={handleFieldChange}
-            mode="historia"
-            errors={currentStepErrors}
-          />
-        )}
-
-        {currentStepId === 'preguntas' && (
-          <StepGrupoEspecifico
-            groupId={resolvedGroupId}
-            value={flat}
-            onChange={handleFieldChange}
-          />
-        )}
-
-        {currentStepId === 'examen' && (
-          <StepPaciente
-            secciones={secciones}
-            grupos={GRUPOS_CONSULTA}
-            value={flat}
-            edad={edad}
-            onChange={handleFieldChange}
-            mode="examen"
-            errors={currentStepErrors}
-          />
-        )}
-
-        {currentStepId === 'estudios' && (
-          <StepEstudiosComplementarios
-            groupId={resolvedGroupId}
-            value={flat}
-            onChange={handleFieldChange}
-          />
-        )}
-
-        {currentStepId === 'primera' && (
-          <StepPrimeraEvolucion
-            value={flat}
-            onChange={handleFieldChange}
-          />
-        )}
-
-        {currentStepId === 'identificacion' && (
-          <StepPaciente
-            secciones={secciones}
-            grupos={GRUPOS_CONSULTA}
-            value={flat}
-            edad={edad}
-            onChange={handleFieldChange}
-            mode="identificacion"
-            errors={currentStepErrors}
-          />
-        )}
+        {steps.map((definition, index) => {
+          const content = renderStepContent(definition, index);
+          if (!content) return null;
+          const isActive = step === index + 1;
+          const styleClasses = SECTION_STYLES[definition.id] || 'border-slate-200 bg-white';
+          return (
+            <section
+              key={definition.id}
+              id={`step-${definition.id}`}
+              data-step-id={definition.id}
+              ref={getSectionRef(definition.id)}
+              className={`scroll-mt-36 overflow-hidden rounded-3xl border ${styleClasses} ${
+                isActive ? 'shadow-xl ring-2 ring-slate-300' : 'shadow-sm'
+              } transition-shadow`}
+            >
+              <div className="border-b border-slate-200 bg-white/60 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {index + 1}. {definition.label}
+                </p>
+              </div>
+              <div className="px-4 pb-5 pt-4">{content}</div>
+            </section>
+          );
+        })}
       </main>
 
       <nav
@@ -503,7 +638,7 @@ useEffect(() => {
             type="button"
             onClick={handleBack}
             disabled={backDisabled}
-            className="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:hover:bg-transparent"
+            className={BUTTON_SECONDARY}
           >
             Atrás
           </button>
@@ -512,8 +647,13 @@ useEffect(() => {
             <span className="font-semibold text-slate-500">Ir a:</span>
             {stepShortcuts.map(({ number, label, enabled }) => {
               const isActive = step === number;
-              const disabled = isActive || busy || !enabled;
+              const disabled = busy;
               const displayLabel = `${number}. ${label}`;
+              const className = isActive
+                ? BUTTON_PILL_ACTIVE
+                : enabled
+                  ? BUTTON_PILL_INACTIVE
+                  : `${BUTTON_PILL_INACTIVE} opacity-60`;
               return (
                 <button
                   key={number}
@@ -521,11 +661,7 @@ useEffect(() => {
                   onClick={() => goToStep(number)}
                   disabled={disabled}
                   aria-current={isActive ? 'step' : undefined}
-                  className={
-                    isActive
-                      ? 'px-3 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white font-semibold'
-                      : 'px-3 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:opacity-50'
-                  }
+                  className={className}
                 >
                   {displayLabel}
                 </button>
@@ -541,7 +677,7 @@ useEffect(() => {
               type="button"
               onClick={handlePrimaryAction}
               disabled={primaryButtonDisabled}
-              className="px-4 py-2 rounded-xl border border-slate-900 bg-slate-900 text-white disabled:opacity-50"
+              className={BUTTON_PRIMARY}
             >
               {nextButtonLabel}
             </button>

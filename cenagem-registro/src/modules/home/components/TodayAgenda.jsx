@@ -1,7 +1,9 @@
 // ===============================
 // src/modules/home/components/TodayAgenda.jsx — Agenda diaria
 // ===============================
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DayPicker } from 'react-day-picker';
+import { es } from 'date-fns/locale';
 import {
   buildOverbookSlotsForDate,
   formatFriendlyDate,
@@ -9,6 +11,7 @@ import {
   getMemberDisplayName,
   getMotivoGroupLabel,
   getStatusBadgeColor,
+  getScheduleForWeekday,
   normalizeFamilyCodeInput,
   normalizePrimeraConsultaInfo,
 } from '@/modules/home/agenda';
@@ -460,119 +463,178 @@ function AgendaList({
   }
 
   const statusOptions = ['Pendiente', 'En sala', 'Atendido', 'Ausente'];
+  const firstTimeItems = items.filter((item) => Boolean(item.primeraConsulta));
+  const followUpItems = items.filter((item) => !item.primeraConsulta);
+  const showGroupedSections = firstTimeItems.length > 0 && followUpItems.length > 0;
+
+  const renderItem = (item) => {
+    const member = item.memberId ? membersById[item.memberId] : null;
+    const family = item.familyId ? familiesById[item.familyId] : null;
+    const isPrimeraConsulta = Boolean(item.primeraConsulta);
+    const isSobreturno = Boolean(item.sobreturno);
+    const wizardPending = Boolean(family?.intake?.wizardPending);
+    const primeraInfo = normalizePrimeraConsultaInfo(
+      item.primeraConsultaInfo
+        || (item.metadata && typeof item.metadata === 'object' ? item.metadata.primeraConsultaInfo : null),
+    );
+
+    const nameParts = isPrimeraConsulta
+      ? [primeraInfo?.apellido, primeraInfo?.nombre].filter(Boolean)
+      : [member?.apellido, member?.nombre].filter(Boolean);
+    let displayName = nameParts.join(' ').trim();
+    if (!displayName) {
+      if (isPrimeraConsulta) {
+        displayName = primeraInfo
+          ? `${primeraInfo.nombre || ''} ${primeraInfo.apellido || ''}`.trim()
+          : 'Primera consulta sin datos';
+      } else {
+        displayName = getMemberDisplayName(member);
+      }
+    }
+
+    let motivoLabel = isPrimeraConsulta
+      ? primeraInfo?.motivoGroupLabel || item.motivo || ''
+      : item.motivo || '';
+    if (!motivoLabel) motivoLabel = 'Motivo sin datos';
+
+    let codeLabel = family?.code ? `HC ${family.code}` : '';
+    if (!codeLabel) {
+      codeLabel = isPrimeraConsulta ? 'AG pendiente' : 'AG sin datos';
+    }
+
+    const summaryText = [codeLabel, displayName, motivoLabel].filter(Boolean).join(' · ');
+    const statusColor = getStatusBadgeColor(item.estado);
+
+    const actionButtons = [];
+    if (family && (!isPrimeraConsulta || !wizardPending)) {
+      actionButtons.push(
+        <button
+          key="open"
+          type="button"
+          onClick={() => onOpenFamily(item.familyId)}
+          className="text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors"
+        >
+          Abrir HC
+        </button>,
+      );
+    }
+    if (isPrimeraConsulta && family && wizardPending) {
+      actionButtons.push(
+        <button
+          key="wizard"
+          type="button"
+          onClick={() => onOpenFamily(item.familyId)}
+          className="text-xs font-semibold text-sky-600 hover:text-sky-800 transition-colors"
+        >
+          Ingresar 1ra consulta
+        </button>,
+      );
+    }
+    if (isPrimeraConsulta && !family && onCreateFamilyCase) {
+      actionButtons.push(
+        <button
+          key="new-family"
+          type="button"
+          onClick={() => onCreateFamilyCase(item)}
+          className="text-xs font-semibold text-sky-600 hover:text-sky-800 transition-colors"
+        >
+          + Nueva HC familiar
+        </button>,
+      );
+    }
+    actionButtons.push(
+      <button
+        key="remove"
+        type="button"
+        onClick={() => onRemove(item.id)}
+        className="text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors"
+      >
+        Eliminar
+      </button>,
+    );
+
+    const badgeElements = [];
+    if (isPrimeraConsulta) {
+      badgeElements.push(
+        <span key="primera" className="rounded-full bg-sky-100 px-2 py-[2px] text-[11px] uppercase tracking-wide text-sky-700">
+          Primera consulta
+        </span>,
+      );
+    }
+    if (isSobreturno) {
+      badgeElements.push(
+        <span key="sobreturno" className="rounded-full bg-amber-100 px-2 py-[2px] text-[11px] uppercase tracking-wide text-amber-700">
+          Sobreturno
+        </span>,
+      );
+    }
+
+    return (
+      <div key={item.id} className="px-4 py-3 text-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="text-xs font-semibold text-slate-500">
+            {item.time ? `${item.time} hs` : 'Sin horario'}
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <div className="font-semibold text-slate-900">{summaryText || 'Turno sin datos'}</div>
+          </div>
+          {badgeElements.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {badgeElements}
+            </div>
+          )}
+          {actionButtons.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
+              {actionButtons}
+            </div>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <span className={`text-[11px] font-medium px-2 py-1 rounded-full ${statusColor}`}>{item.estado}</span>
+            <select
+              value={item.estado}
+              onChange={(e) => onStatusChange(item.id, e.target.value)}
+              className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
+            >
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {item.notas && <div className="mt-2 text-xs text-slate-500">Nota: {item.notas}</div>}
+      </div>
+    );
+  };
 
   return (
-    <div className="flex flex-col gap-3">
-      {items.map((item) => {
-        const member = item.memberId ? membersById[item.memberId] : null;
-        const family = item.familyId ? familiesById[item.familyId] : null;
-        const isPrimeraConsulta = Boolean(item.primeraConsulta);
-        const isSobreturno = Boolean(item.sobreturno);
-        const wizardPending = Boolean(family?.intake?.wizardPending);
-        const primeraInfo = normalizePrimeraConsultaInfo(
-          item.primeraConsultaInfo
-            || (item.metadata && typeof item.metadata === 'object' ? item.metadata.primeraConsultaInfo : null),
-        );
-        const primeraMotivoLabel = primeraInfo?.motivoGroupLabel || '';
-        const primeraPacienteNombre = primeraInfo
-          ? `${primeraInfo.nombre || ''} ${primeraInfo.apellido || ''}`.trim()
-          : '';
-        const name = isPrimeraConsulta ? 'Primera consulta' : getMemberDisplayName(member);
-        const familyLabel = family
-          ? `HC ${family.code} · ${family.provincia || 'Provincia sin cargar'}`
-          : isPrimeraConsulta
-          ? 'Sin HC asignada'
-          : 'HC sin datos';
-        const statusColor = getStatusBadgeColor(item.estado);
-
-        return (
-          <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">{item.time || 'Sin horario'} hs</div>
-                <div className="text-lg font-semibold text-slate-900">{name}</div>
-                <div className="text-[11px] text-slate-500">{familyLabel}</div>
-                {isPrimeraConsulta && (
-                  <>
-                    <div className="text-sm font-semibold text-slate-600">
-                      Paciente:{' '}
-                      {primeraPacienteNombre || 'Sin datos'}{' '}
-                      {primeraInfo?.edad ? `· ${primeraInfo.edad} años` : ''}
-                    </div>
-                    {primeraMotivoLabel && (
-                      <div className="text-[11px] text-sky-700">Motivo: {primeraMotivoLabel}</div>
-                    )}
-                  </>
-                )}
-                {(isPrimeraConsulta || isSobreturno) && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {isPrimeraConsulta && (
-                      <span className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full bg-sky-100 text-sky-700">
-                        Primera consulta
-                      </span>
-                    )}
-                    {isSobreturno && (
-                      <span className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full bg-amber-100 text-amber-700">
-                        Sobreturno
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[11px] font-medium px-2 py-1 rounded-full ${statusColor}`}>{item.estado}</span>
-                <select
-                  value={item.estado}
-                  onChange={(e) => onStatusChange(item.id, e.target.value)}
-                  className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
-                >
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </div>
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      {firstTimeItems.length > 0 && (
+        <div>
+          {showGroupedSections && (
+            <div className="bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Consultas de primera vez
             </div>
-            {item.motivo && <div className="text-sm text-slate-700">{item.motivo}</div>}
-            {item.notas && (
-              <div className="text-xs text-slate-500 border-t border-dashed border-slate-200 pt-2">{item.notas}</div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {family && (!isPrimeraConsulta || !wizardPending) && (
-                <button
-                  onClick={() => onOpenFamily(item.familyId)}
-                  className="text-xs px-3 py-1 rounded-lg border border-slate-300 hover:bg-slate-50"
-                >
-                  Abrir HC
-                </button>
-              )}
-              {isPrimeraConsulta && family && wizardPending && (
-                <button
-                  onClick={() => onOpenFamily(item.familyId)}
-                  className="text-xs px-3 py-1 rounded-lg border border-sky-400 bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium"
-                >
-                  Ingresar 1ra consulta
-                </button>
-              )}
-              {isPrimeraConsulta && !family && onCreateFamilyCase && (
-                <button
-                  onClick={() => onCreateFamilyCase(item)}
-                  className="text-xs px-3 py-1 rounded-lg border border-sky-300 bg-sky-50 !text-black hover:bg-sky-100 font-medium"
-                >
-                  + Nueva HC familiar
-                </button>
-              )}
-              <button
-                onClick={() => onRemove(item.id)}
-                className="text-xs px-3 py-1 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
-              >
-                Eliminar
-              </button>
-            </div>
+          )}
+          <div className="divide-y divide-slate-100">
+            {firstTimeItems.map((item) => renderItem(item))}
           </div>
-        );
-      })}
+        </div>
+      )}
+      {showGroupedSections && <div className="border-t border-dashed border-slate-200" />}
+      {followUpItems.length > 0 && (
+        <div>
+          {showGroupedSections && (
+            <div className="bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Consultas programadas
+            </div>
+          )}
+          <div className="divide-y divide-slate-100">
+            {followUpItems.map((item) => renderItem(item))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -581,6 +643,7 @@ export default function TodayAgenda({
   selectedDate,
   onDateChange,
   appointments,
+  allAppointments = [],
   membersOptions,
   membersById,
   familiesById,
@@ -593,6 +656,131 @@ export default function TodayAgenda({
 }) {
   const [adding, setAdding] = useState(false);
   const [overbookMode, setOverbookMode] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const datePickerRef = useRef(null);
+
+  const selectedDateObj = useMemo(() => {
+    if (!selectedDate) return undefined;
+    const parts = selectedDate.split('-').map(Number);
+    if (parts.length !== 3) return undefined;
+    const [year, month, day] = parts;
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return undefined;
+    return new Date(year, month - 1, day);
+  }, [selectedDate]);
+
+  const selectedDateLabel = useMemo(() => {
+    if (!selectedDateObj) return 'Seleccionar fecha';
+    return selectedDateObj.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }, [selectedDateObj]);
+
+  const bookedCountsByDate = useMemo(() => {
+    const counts = new Map();
+    (Array.isArray(allAppointments) ? allAppointments : []).forEach((item) => {
+      if (!item || !item.date) return;
+      if (item.sobreturno) return;
+      const iso = item.date;
+      counts.set(iso, (counts.get(iso) || 0) + 1);
+    });
+    return counts;
+  }, [allAppointments]);
+
+  const getAvailabilityStatus = useCallback(
+    (dateObj) => {
+      if (!(dateObj instanceof Date)) return null;
+      if (Number.isNaN(dateObj.getTime())) return null;
+      const schedule = getScheduleForWeekday(dateObj.getDay());
+      if (!Array.isArray(schedule) || schedule.length === 0) return null;
+      const totalCapacity = schedule.reduce(
+        (sum, item) => sum + (Number.isFinite(item?.capacity) ? item.capacity : 0),
+        0,
+      );
+      if (totalCapacity === 0) return null;
+      const iso = formatISODateLocal(dateObj);
+      const booked = bookedCountsByDate.get(iso) || 0;
+      const available = Math.max(totalCapacity - booked, 0);
+      if (available === 0) return 'unavailable';
+      if (available <= 3) return 'availableFew';
+      return 'availableMany';
+    },
+    [bookedCountsByDate],
+  );
+
+  const dayPickerModifiers = useMemo(
+    () => ({
+      availableMany: (day) => getAvailabilityStatus(day) === 'availableMany',
+      availableFew: (day) => getAvailabilityStatus(day) === 'availableFew',
+      unavailable: (day) => getAvailabilityStatus(day) === 'unavailable',
+    }),
+    [getAvailabilityStatus],
+  );
+
+  const dayPickerModifiersStyles = useMemo(
+    () => ({
+      availableMany: {
+        backgroundColor: '#dcfce7',
+        color: '#166534',
+        fontWeight: 600,
+        borderRadius: '8px',
+      },
+      availableFew: {
+        backgroundColor: '#fef3c7',
+        color: '#92400e',
+        fontWeight: 600,
+        borderRadius: '8px',
+      },
+      unavailable: {
+        backgroundColor: '#fee2e2',
+        color: '#b91c1c',
+        fontWeight: 600,
+        borderRadius: '8px',
+      },
+    }),
+    [],
+  );
+
+  const dayPickerStyles = useMemo(
+    () => ({
+      day: { borderRadius: '8px' },
+      day_selected: { backgroundColor: '#0f172a', color: '#fff' },
+      day_today: { border: '1px solid #1e293b' },
+      head_cell: { textTransform: 'uppercase', fontSize: '11px', fontWeight: 600, color: '#64748b' },
+      caption_label: { textTransform: 'capitalize' },
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!showCalendar) return;
+    const handleClickOutside = (event) => {
+      if (!datePickerRef.current) return;
+      if (!datePickerRef.current.contains(event.target)) {
+        setShowCalendar(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showCalendar]);
+
+  useEffect(() => {
+    if (!showCalendar) return;
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setShowCalendar(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showCalendar]);
+
+  const handleSelectDay = useCallback(
+    (day) => {
+      if (!day) return;
+      const iso = formatISODateLocal(day);
+      onDateChange(iso);
+      setShowCalendar(false);
+    },
+    [onDateChange],
+  );
   const todayIso = useMemo(() => formatISODateLocal(new Date()), []);
   const isTodaySelected = selectedDate === todayIso;
 
@@ -661,12 +849,32 @@ export default function TodayAgenda({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => onDateChange(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-          />
+          <div className="relative" ref={datePickerRef}>
+            <button
+              type="button"
+              onClick={() => setShowCalendar((prev) => !prev)}
+              className="px-3 py-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            >
+              {selectedDateLabel}
+            </button>
+            {showCalendar && (
+              <div className="absolute right-0 z-20 mt-2 rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <DayPicker
+                  mode="single"
+                  selected={selectedDateObj}
+                  defaultMonth={selectedDateObj || new Date()}
+                  onSelect={handleSelectDay}
+                  modifiers={dayPickerModifiers}
+                  modifiersStyles={dayPickerModifiersStyles}
+                  styles={dayPickerStyles}
+                  className="p-2"
+                  locale={es}
+                  weekStartsOn={1}
+                  showOutsideDays
+                />
+              </div>
+            )}
+          </div>
           <button
             onClick={handleOpenStandardForm}
             className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm font-medium"

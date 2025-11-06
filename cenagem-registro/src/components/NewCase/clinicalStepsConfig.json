@@ -6,19 +6,15 @@
   },
   {
     "id": "antecedentes",
-    "label": "Antecedentes",
+    "label": "Antecedentes personales",
     "availabilityKey": "antecedentes",
     "telemetryEvent": "clinical_step_antecedentes"
   },
   {
-    "id": "historia",
-    "label": "Enfermedad actual",
-    "telemetryEvent": "clinical_step_historia"
-  },
-  {
-    "id": "preguntas",
-    "label": "Preguntas específicas",
-    "telemetryEvent": "clinical_step_preguntas"
+    "id": "familia",
+    "label": "Antecedentes familiares",
+    "telemetryEvent": "clinical_step_familia",
+    "availabilityKey": "familia"
   },
   {
     "id": "examen",

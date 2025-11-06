@@ -14,6 +14,7 @@ export type CaseWizardFlat = {
   motivoGroup: string;
   motivoDetail: string;
   motivoPaciente: string;
+  motivoFuenteDerivacion: string;
   motivoDerivacion: string;
   enfInicioContexto: string;
   enfEvolucionActual: string;
@@ -56,6 +57,8 @@ export type CaseWizardFlat = {
   pacienteProfesion: string;
   pacienteAntecedentes: string;
   antecedentesNeurologicos: string;
+  antecedentesHospitalizaciones: string;
+  antecedentesIntervenciones: string;
   antecedentesMetabolicos: string;
   antecedentesSensoriales: string;
   antecedentesPsicosociales: string;
@@ -144,6 +147,7 @@ export type CaseWizardFlat = {
   consanguinidadDetalle: string;
   familiaAntecedentesNeuro: string;
   familiaAbortosInfertilidad: string;
+  familiaMuertesNeonatales: string;
   familiaDesarrolloHermanos: string;
   familiaDiagnosticosGeneticos: string;
   obstetricosDescripcion: string;
@@ -288,6 +292,7 @@ export const CASE_WIZARD_FLAT_DEFAULTS: CaseWizardFlat = {
   motivoGroup: '',
   motivoDetail: '',
   motivoPaciente: '',
+  motivoFuenteDerivacion: '',
   motivoDerivacion: '',
   enfInicioContexto: '',
   enfEvolucionActual: '',
@@ -330,6 +335,8 @@ export const CASE_WIZARD_FLAT_DEFAULTS: CaseWizardFlat = {
   pacienteProfesion: '',
   pacienteAntecedentes: '',
   antecedentesNeurologicos: '',
+  antecedentesHospitalizaciones: '',
+  antecedentesIntervenciones: '',
   antecedentesMetabolicos: '',
   antecedentesSensoriales: '',
   antecedentesPsicosociales: '',
@@ -418,6 +425,7 @@ export const CASE_WIZARD_FLAT_DEFAULTS: CaseWizardFlat = {
   consanguinidadDetalle: '',
   familiaAntecedentesNeuro: '',
   familiaAbortosInfertilidad: '',
+  familiaMuertesNeonatales: '',
   familiaDesarrolloHermanos: '',
   familiaDiagnosticosGeneticos: '',
   obstetricosDescripcion: '',
@@ -553,8 +561,8 @@ export const CASE_WIZARD_FLAT_DEFAULTS: CaseWizardFlat = {
 
 export const CASE_WIZARD_SECTIONS = {
   administrativo: ["pacienteNombre","pacienteApellido","pacienteDni","pacienteNacimiento","pacienteDireccion","pacienteAcompanante","pacienteAcompananteParentesco","contactoTelefono1","contactoTelefono2","pacienteObraSocial","pacienteObraSocialNumero","tutorPadreNombre","tutorPadreApellido","tutorPadreProcedencia","tutorPadreConsanguinidad","tutorPadrePadreApellido","tutorPadrePadreProcedencia","tutorPadreMadreApellido","tutorPadreMadreProcedencia","tutorMadreNombre","tutorMadreApellido","tutorMadreProcedencia","tutorMadreConsanguinidad","tutorMadrePadreApellido","tutorMadrePadreProcedencia","tutorMadreMadreApellido","tutorMadreMadreProcedencia","agNumber","provincia","medicoAsignado","pacienteSexo","pacienteEmail","pacienteTelefono"] as const,
-  motivo: ["motivoGroup","motivoDetail","motivoPaciente","motivoDerivacion"] as const,
-  clinico: ["enfInicioContexto","enfEvolucionActual","enfManifestacionesClaves","enfEvaluacionesPrevias","enfImpactoPlan","consultaFecha","pacienteEscolaridad","pacienteEscolaridadRendimiento","pacienteHabitos","pacienteApoyosPsicosociales","pacienteProfesion","pacienteAntecedentes","antecedentesNeurologicos","antecedentesMetabolicos","antecedentesSensoriales","antecedentesPsicosociales","pacienteExamenPeso","pacienteExamenTalla","pacienteExamenPc","pacienteExamenPesoPercentil","pacienteExamenTallaPercentil","pacienteExamenPcPercentil","pacienteExamenProporciones","pacienteExamenObservaciones","pacienteExamenDismorfias","pacienteExamenOjos","pacienteExamenNariz","pacienteExamenFiltrum","pacienteExamenBoca","pacienteExamenOrejas","pacienteExamenCuello","pacienteExamenTorax","pacienteExamenColumna","pacienteExamenAbdomen","pacienteExamenGenitales","pacienteExamenMalformaciones","pacienteExamenPiel","pacienteExamenNeurologico","pacienteExamenOtras","edadMaternaConcepcion","edadPaternaConcepcion","controlPrenatal","controlPrenatalDetalle","embarazoComplicaciones","embarazoExposiciones","prenatalEcoAlteraciones","perinatalTipoParto","perinatalEdadGestacional","perinatalPesoNacimiento","perinatalTallaNacimiento","perinatalApgar1","perinatalApgar5","perinatalInternacionNeonatal","perinatalComplicaciones","prenatalSemanas","prenatalEcografia","prenatalCribado","prenatalRciu","prenatalInvasivos","prenatalGeneticaFetal","prenatalConsejeria","prenatalNotas","prenatalProcedimientos","ndHitosMotores","ndLenguaje","ndConducta","ndRegresion","ndAreaCognitiva","ndEscolaridadDetalle","comportamientoInteraccion","comportamientoAdaptativas","comportamientoEscalas","comportamientoApoyo","reproTiempoBusqueda","reproFemeninoDatos","reproMasculinoDatos","reproPerdidasGestacionales","oncoTiposTumor","oncoEdadDiagnostico","oncoTratamientos","oncoEstudiosPrevios","metaSintomasAgudos","metaCribadoNeonatal","metaBioquimica","consanguinidad","consanguinidadDetalle","familiaAntecedentesNeuro","familiaAbortosInfertilidad","familiaDesarrolloHermanos","familiaDiagnosticosGeneticos","obstetricosDescripcion","tallaMotivoConsulta","tallaTallaCm","tallaTallaDE","tallaPesoKg","tallaImc","tallaVelocidadCrecimiento","tallaTallaDiana","tallaEdadOsea","tallaDiscrepanciaEdadOsea","tallaAntecedentes","tallaExamenFisico","tallaClasificacionMorfologica","tallaComplementariosGenerales","monoFenotipo","monoBioquimica","monoOrganoSistema","monoEstudiosPrevios","resumenPrimeraConsulta","b1Nombre","b1Apellido","b1Nacimiento","b1Email","b1Profesion","b1ObraSocial","b1Antecedentes","c1Nombre","c1Apellido","c1Nacimiento","c1Email","c1Profesion","c1ObraSocial","c1Antecedentes","c1Gestas","c1Partos","c1Abortos","c1Cesareas","abueloPaternoApellido","abueloPaternoProcedencia","abuelaPaternaApellido","abuelaPaternaProcedencia","abueloMaternoApellido","abueloMaternoProcedencia","abuelaMaternaApellido","abuelaMaternaProcedencia"] as const,
+  motivo: ["motivoGroup","motivoDetail","motivoFuenteDerivacion","motivoPaciente","motivoDerivacion"] as const,
+  clinico: ["enfInicioContexto","enfEvolucionActual","enfManifestacionesClaves","enfEvaluacionesPrevias","enfImpactoPlan","consultaFecha","pacienteEscolaridad","pacienteEscolaridadRendimiento","pacienteHabitos","pacienteApoyosPsicosociales","pacienteProfesion","pacienteAntecedentes","antecedentesNeurologicos","antecedentesHospitalizaciones","antecedentesIntervenciones","antecedentesMetabolicos","antecedentesSensoriales","antecedentesPsicosociales","pacienteExamenPeso","pacienteExamenTalla","pacienteExamenPc","pacienteExamenPesoPercentil","pacienteExamenTallaPercentil","pacienteExamenPcPercentil","pacienteExamenProporciones","pacienteExamenObservaciones","pacienteExamenDismorfias","pacienteExamenOjos","pacienteExamenNariz","pacienteExamenFiltrum","pacienteExamenBoca","pacienteExamenOrejas","pacienteExamenCuello","pacienteExamenTorax","pacienteExamenColumna","pacienteExamenAbdomen","pacienteExamenGenitales","pacienteExamenMalformaciones","pacienteExamenPiel","pacienteExamenNeurologico","pacienteExamenOtras","edadMaternaConcepcion","edadPaternaConcepcion","controlPrenatal","controlPrenatalDetalle","embarazoComplicaciones","embarazoExposiciones","prenatalEcoAlteraciones","perinatalTipoParto","perinatalEdadGestacional","perinatalPesoNacimiento","perinatalTallaNacimiento","perinatalApgar1","perinatalApgar5","perinatalInternacionNeonatal","perinatalComplicaciones","prenatalSemanas","prenatalEcografia","prenatalCribado","prenatalRciu","prenatalInvasivos","prenatalGeneticaFetal","prenatalConsejeria","prenatalNotas","prenatalProcedimientos","ndHitosMotores","ndLenguaje","ndConducta","ndRegresion","ndAreaCognitiva","ndEscolaridadDetalle","comportamientoInteraccion","comportamientoAdaptativas","comportamientoEscalas","comportamientoApoyo","reproTiempoBusqueda","reproFemeninoDatos","reproMasculinoDatos","reproPerdidasGestacionales","oncoTiposTumor","oncoEdadDiagnostico","oncoTratamientos","oncoEstudiosPrevios","metaSintomasAgudos","metaCribadoNeonatal","metaBioquimica","consanguinidad","consanguinidadDetalle","familiaAntecedentesNeuro","familiaAbortosInfertilidad","familiaMuertesNeonatales","familiaDesarrolloHermanos","familiaDiagnosticosGeneticos","obstetricosDescripcion","tallaMotivoConsulta","tallaTallaCm","tallaTallaDE","tallaPesoKg","tallaImc","tallaVelocidadCrecimiento","tallaTallaDiana","tallaEdadOsea","tallaDiscrepanciaEdadOsea","tallaAntecedentes","tallaExamenFisico","tallaClasificacionMorfologica","tallaComplementariosGenerales","monoFenotipo","monoBioquimica","monoOrganoSistema","monoEstudiosPrevios","resumenPrimeraConsulta","b1Nombre","b1Apellido","b1Nacimiento","b1Email","b1Profesion","b1ObraSocial","b1Antecedentes","c1Nombre","c1Apellido","c1Nacimiento","c1Email","c1Profesion","c1ObraSocial","c1Antecedentes","c1Gestas","c1Partos","c1Abortos","c1Cesareas"],
   plan: ["ndEEG","ndRMN","ndEstudiosOtros","ndInterconsultas","ndApoyos","reproDiagnosticos","reproTratamientos","reproEstudiosPrevios","reproPlan","oncoArbolFamiliar","oncoRiesgoModelos","oncoEstudiosDisponibles","oncoPlanSeguimiento","tallaEdadInicio","tallaFamiliaAdultos","tallaEstudiosPrevios","tallaTratamientos","dismorfiasDescripcion","dismorfiasSistemasAfectados","dismorfiasImagenes","dismorfiasEstudiosGeneticos","incTipoEstudio","incHallazgo","incAccionRequerida","otrosMotivo","otrosEstudios","otrosPlan","monoTratamiento","monoPlanEstudios","monoNotas","estudiosPrimerNivel","estudiosSegundoNivel","estudiosTercerNivel","estudiosComplementariosNotas","sintesisClasificacion","sintesisSindromico","sintesisReversibilidad","sintesisEtiologia","planDerivaciones","planConsejeriaGenetica","planControles","planRegistroHpo","primeraEvolucion","identificacionNombre","identificacionEdad","identificacionDni","identificacionCobertura","identificacionDomicilio","identificacionFechaConsulta","identificacionFum","identificacionEdadGestacional","identificacionMetodoCalculo","identificacionMotivoConsulta","antecedentesMedicosCronicos","antecedentesCirugias","antecedentesMedicaciones","antecedentesConsumo","antecedentesVacunas","antecedentesMenarca","antecedentesMetodoAnticonceptivo","antecedentesHistoriaObstetrica","antecedentesComplicacionesPrevias","antecedentesAbortos","antecedentesConsanguinidad","antecedentesEtnia","familiaHistoriaGenetica","familiaAbortosRecurrentes","familiaPortadores","familiaCancer","familiaArbolGenealogico","parejaEdad","parejaOcupacion","parejaAntecedentesMedicos","parejaConsumo","parejaHistoriaFamiliar","embarazoControlPrenatal","embarazoSuplementacion","embarazoInfecciones","embarazoEventos","embarazoPesoTension","embarazoMovimientos","embarazoLaboratorios","estudiosEcoPrimerTrimestre","estudiosEcoSegundoTrimestre","estudiosEcoDoppler","estudiosScreening","estudiosScreeningResultados","estudiosInvasivos","estudiosInvasivosHallazgos","psicosocialEducacion","psicosocialApoyo","psicosocialDeseo","psicosocialSituacion","psicosocialViolencia","sintesisResumen","sintesisPlanAccion","sintesisRegistro"] as const,
 } as const satisfies Record<CaseWizardSectionId, readonly CaseWizardFieldKey[]>;
 
@@ -566,6 +574,7 @@ export const CASE_WIZARD_FIELD_SECTION = {
   pacienteDireccion: 'administrativo',
   motivoGroup: 'motivo',
   motivoDetail: 'motivo',
+  motivoFuenteDerivacion: 'motivo',
   motivoPaciente: 'motivo',
   motivoDerivacion: 'motivo',
   enfInicioContexto: 'clinico',
@@ -609,6 +618,8 @@ export const CASE_WIZARD_FIELD_SECTION = {
   pacienteProfesion: 'clinico',
   pacienteAntecedentes: 'clinico',
   antecedentesNeurologicos: 'clinico',
+  antecedentesHospitalizaciones: 'clinico',
+  antecedentesIntervenciones: 'clinico',
   antecedentesMetabolicos: 'clinico',
   antecedentesSensoriales: 'clinico',
   antecedentesPsicosociales: 'clinico',
@@ -697,6 +708,7 @@ export const CASE_WIZARD_FIELD_SECTION = {
   consanguinidadDetalle: 'clinico',
   familiaAntecedentesNeuro: 'clinico',
   familiaAbortosInfertilidad: 'clinico',
+  familiaMuertesNeonatales: 'clinico',
   familiaDesarrolloHermanos: 'clinico',
   familiaDiagnosticosGeneticos: 'clinico',
   obstetricosDescripcion: 'clinico',
@@ -829,4 +841,3 @@ export const CASE_WIZARD_FIELD_SECTION = {
   sintesisPlanAccion: 'plan',
   sintesisRegistro: 'plan',
 } as const satisfies Record<CaseWizardFieldKey, CaseWizardSectionId>;
-
