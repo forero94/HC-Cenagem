@@ -44,18 +44,16 @@ export default function StepAdministrativo({ grupos, value, onChange, errors = {
   return (
     <section className="grid gap-6 text-slate-800">
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 rounded-3xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+
+
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-sky-700">Nº HC / AG</span>
           <input
-            className={inputClass('agNumber', 'rounded-xl border border-sky-200 bg-white px-3 py-2 uppercase text-sky-900 placeholder:text-sky-400 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100')}
+            className="rounded-xl border border-sky-200 bg-sky-100/80 px-3 py-2 uppercase text-sky-900 shadow-sm"
             value={v.agNumber || ''}
-            onChange={setUpper('agNumber')}
-            placeholder="AG-0001"
-            aria-invalid={errorFor('agNumber') ? 'true' : undefined}
+            readOnly
+            placeholder="Generado automáticamente"
           />
-          {errorFor('agNumber') ? (
-            <span className="text-[11px] text-rose-600">{errorFor('agNumber')}</span>
-          ) : null}
         </label>
 
         <label className="flex flex-col gap-1">

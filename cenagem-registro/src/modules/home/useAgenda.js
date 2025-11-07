@@ -7,9 +7,13 @@ import { STATUS_TO_API, STATUS_FROM_API } from '@/store/cenagemStore';
 import {
   collectNextAvailableSlots,
   formatISODateLocal,
+  getMaxDailyCapacity,
   getMotivoGroupLabel,
   normalizePrimeraConsultaInfo,
+  validateServiceDateConstraints,
 } from './agenda';
+
+const DEFAULT_SERVICE = 'clinica';
 
 const mapAppointmentFromApi = (appointment) => {
   if (!appointment) return null;
@@ -36,6 +40,14 @@ const mapAppointmentFromApi = (appointment) => {
   const normalizedAppointmentId = appointment?.id != null ? String(appointment.id) : undefined;
   const normalizedFamilyId = derivedFamilyId != null ? String(derivedFamilyId) : null;
   const normalizedMemberId = appointment?.memberId != null ? String(appointment.memberId) : null;
+  const service =
+    (typeof metadata.service === 'string' && metadata.service.trim()) ||
+    (typeof metadata.servicio === 'string' && metadata.servicio.trim()) ||
+    DEFAULT_SERVICE;
+  const serviceDetails =
+    metadata && typeof metadata.serviceDetails === 'object' && metadata.serviceDetails !== null
+      ? metadata.serviceDetails
+      : null;
 
   return {
     id: normalizedAppointmentId || appointment.id,
@@ -58,6 +70,8 @@ const mapAppointmentFromApi = (appointment) => {
     primeraConsulta: primeraConsultaFlag,
     primeraConsultaInfo: metadataPrimeraInfo,
     sobreturno: sobreturnoFlag,
+    service,
+    serviceDetails,
   };
 };
 
@@ -66,12 +80,16 @@ const toIsoDateTime = (date, time = '08:00') => {
   return new Date(`${base}T${time}:00`).toISOString();
 };
 
-export function useAgenda({ initialDate, preload = true } = {}) {
+export function useAgenda({ initialDate, preload = true, initialService = DEFAULT_SERVICE } = {}) {
   const [selectedDate, setSelectedDate] = useState(() => {
     if (initialDate) return initialDate;
     return formatISODateLocal(new Date());
   });
 
+  const normalizedInitialService =
+    (typeof initialService === 'string' && initialService.trim().toLowerCase()) ||
+    DEFAULT_SERVICE;
+  const [service, setService] = useState(normalizedInitialService);
   const [agenda, setAgenda] = useState([]);
   const [loading, setLoading] = useState(preload);
   const [error, setError] = useState(null);
@@ -86,14 +104,60 @@ export function useAgenda({ initialDate, preload = true } = {}) {
         : Array.isArray(response)
           ? response
           : [];
-      setAgenda(collection.map(mapAppointmentFromApi));
+      const mapped = collection.map(mapAppointmentFromApi);
+      const validAppointments = [];
+      const invalidAppointments = [];
+
+      mapped.forEach((item) => {
+        const validationError = validateServiceDateConstraints({
+          service: item.service || DEFAULT_SERVICE,
+          date: item.date,
+          time: item.time,
+          serviceData: item.serviceDetails?.data,
+          serviceDetails: item.serviceDetails,
+          sobreturno: item.sobreturno,
+        });
+        if (validationError) {
+          invalidAppointments.push({ appointment: item, reason: validationError });
+        } else {
+          validAppointments.push(item);
+        }
+      });
+
+      const acceptedAppointments = [...validAppointments];
+      if (invalidAppointments.length) {
+        console.warn('[agenda] Turnos fuera de las reglas de agenda detectados', {
+          count: invalidAppointments.length,
+          details: invalidAppointments.map(({ appointment, reason }) => ({
+            id: appointment?.id,
+            service: appointment?.service,
+            reason,
+          })),
+        });
+        invalidAppointments.forEach(({ appointment, reason }) => {
+          if (!appointment) return;
+          acceptedAppointments.push({
+            ...appointment,
+            validationWarning: reason,
+          });
+        });
+      }
+
+      const filtered = service
+        ? acceptedAppointments.filter(
+            (item) =>
+              (item.service || DEFAULT_SERVICE).toLowerCase() === service.toLowerCase(),
+          )
+        : acceptedAppointments;
+
+      setAgenda(filtered);
     } catch (err) {
       console.error('No se pudo cargar la agenda', err);
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [service]);
 
   useEffect(() => {
     if (preload) {
@@ -108,9 +172,14 @@ export function useAgenda({ initialDate, preload = true } = {}) {
       .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
   }, [agenda, selectedDate]);
 
+  const suggestionLimit = useMemo(() => {
+    const capacity = getMaxDailyCapacity(service) || 0;
+    return Math.max(capacity, 12);
+  }, [service]);
+
   const nextAvailableSlots = useMemo(
-    () => collectNextAvailableSlots(agenda, { fromDate: selectedDate, limit: 12 }),
-    [agenda, selectedDate],
+    () => collectNextAvailableSlots(agenda, { fromDate: selectedDate, limit: suggestionLimit, service }),
+    [agenda, selectedDate, service, suggestionLimit],
   );
 
   const addAppointment = useCallback(
@@ -119,6 +188,15 @@ export function useAgenda({ initialDate, preload = true } = {}) {
         primeraConsulta: Boolean(appointment.primeraConsulta),
         sobreturno: Boolean(appointment.sobreturno),
       };
+      if (appointment.serviceDetails) {
+        baseMetadata.serviceDetails = appointment.serviceDetails;
+      }
+      if (!('service' in baseMetadata)) {
+        baseMetadata.service = appointment.service || service || DEFAULT_SERVICE;
+      }
+      if (!('servicio' in baseMetadata)) {
+        baseMetadata.servicio = appointment.service || service || DEFAULT_SERVICE;
+      }
       if (baseMetadata.primeraConsulta && appointment.primeraConsultaInfo) {
         const normalizedInfo = normalizePrimeraConsultaInfo({
           ...appointment.primeraConsultaInfo,
@@ -157,7 +235,7 @@ export function useAgenda({ initialDate, preload = true } = {}) {
       setAgenda((prev) => [...prev, mapped]);
       return mapped;
     },
-    [],
+    [service],
   );
 
   const updateAppointmentStatus = useCallback(
@@ -213,15 +291,30 @@ export function useAgenda({ initialDate, preload = true } = {}) {
     await loadAppointments();
   }, [loadAppointments]);
 
+  const updateService = useCallback((value) => {
+    if (typeof value === 'function') {
+      setService((prev) => {
+        const next = value(prev);
+        return (typeof next === 'string' && next.trim().toLowerCase()) || DEFAULT_SERVICE;
+      });
+      return;
+    }
+    const normalized =
+      (typeof value === 'string' && value.trim().toLowerCase()) || DEFAULT_SERVICE;
+    setService(normalized);
+  }, []);
+
   return {
     agenda,
     selectedDate,
     agendaForSelectedDate,
     nextAvailableSlots,
+    service,
     loading,
     error,
     setSelectedDate,
     setAgenda,
+    setService: updateService,
     addAppointment,
     updateAppointmentStatus,
     removeAppointment,

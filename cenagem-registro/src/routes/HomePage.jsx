@@ -368,6 +368,7 @@ export default function HomePage({ user, onLogout }) {
     selectedDate,
     agendaForSelectedDate,
     nextAvailableSlots,
+    service,
     setSelectedDate,
     addAppointment,
     updateAppointmentStatus,
@@ -375,6 +376,7 @@ export default function HomePage({ user, onLogout }) {
     markFamilyAppointmentsAsAttended,
     syncAgenda,
     setAgenda,
+    setService,
   } = useAgenda();
   const [familyCodeInput, setFamilyCodeInput] = useState('');
   const [familyCodeFeedback, setFamilyCodeFeedback] = useState(null);
@@ -597,6 +599,8 @@ export default function HomePage({ user, onLogout }) {
 
   const selectedDateLabel = formatFriendlyDate(selectedDate);
 
+  const nextAgNumber = useMemo(() => generateNextCode(families), [families]);
+
   const metrics = [
     { label: 'Consultas hoy', value: consultasHoy, hint: selectedDateLabel || '' },
     { label: 'Pendientes', value: pendientesHoy, hint: 'Turnos sin marcar como atendidos' },
@@ -623,9 +627,21 @@ export default function HomePage({ user, onLogout }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const handleCreateAppointment = async ({ memberId, date, time, motivo, notas, primeraConsulta, sobreturno, primeraConsultaInfo }) => {
+  const handleCreateAppointment = async ({
+    memberId,
+    date,
+    time,
+    motivo,
+    notas,
+    primeraConsulta,
+    sobreturno,
+    primeraConsultaInfo,
+    service: serviceFromForm,
+    serviceDetails,
+  }) => {
     const member = memberId ? membersById[memberId] : null;
     if (!member && !primeraConsulta) return;
+    const serviceKey = (serviceFromForm || service || 'clinica').toLowerCase();
     const appointment = {
       id: uidLocal(),
       memberId: member?.id || null,
@@ -638,6 +654,8 @@ export default function HomePage({ user, onLogout }) {
       primeraConsulta: Boolean(primeraConsulta),
       sobreturno: Boolean(sobreturno),
       primeraConsultaInfo: primeraConsulta ? primeraConsultaInfo || null : null,
+      service: serviceKey,
+      serviceDetails: serviceDetails || null,
     };
     try {
       await addAppointment(appointment);
@@ -1083,6 +1101,8 @@ export default function HomePage({ user, onLogout }) {
       <TodayAgenda
         selectedDate={selectedDate}
         onDateChange={setSelectedDate}
+        service={service}
+        onServiceChange={setService}
         appointments={agendaForSelectedDate}
         allAppointments={agenda}
         membersOptions={agendaMembersOptions}
@@ -1094,6 +1114,7 @@ export default function HomePage({ user, onLogout }) {
         onOpenFamily={handleOpenFamily}
         onCreateFamilyCase={handleCreateFamilyCaseFromAppointment}
         availableSlots={nextAvailableSlots}
+        onEnsureFamilyDetail={(familyId) => ensureFamilyDetail(familyId, true)}
       />
       <WeeklyAgendaBoard
         agenda={agenda}
@@ -1101,6 +1122,7 @@ export default function HomePage({ user, onLogout }) {
         familiesById={familiesById}
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
+        service={service}
       />
 
 {showNewCase && (
@@ -1112,6 +1134,7 @@ export default function HomePage({ user, onLogout }) {
       errorMessage={createCaseError || ''}
       onDismissError={() => setCreateCaseError(null)}
       busy={creatingCase}
+      nextAgNumber={nextAgNumber}
     />
   </div>
 )}

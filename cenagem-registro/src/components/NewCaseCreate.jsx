@@ -41,6 +41,7 @@ export default function NewCaseCreate({
   busy = false,
   errorMessage = '',
   onDismissError = () => {},
+  nextAgNumber,
 }) {
   const [form, setForm] = useState(ADMIN_INITIAL_FORM);
 
@@ -142,7 +143,7 @@ export default function NewCaseCreate({
         </p>
         <StepAdministrativo
           grupos={GRUPOS_CONSULTA}
-          value={form}
+          value={{ ...form, agNumber: form.agNumber || nextAgNumber }}
           onChange={handleAdminChange}
         />
         <div className="flex justify-end gap-2">

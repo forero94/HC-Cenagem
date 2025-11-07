@@ -6,16 +6,40 @@ import {
   buildWeeklyAgendaData,
   getMemberDisplayName,
   normalizePrimeraConsultaInfo,
+  getScheduleForWeekday,
+  WEEKDAYS,
+  getWeekOfYear,
+  formatISODateLocal,
 } from '@/modules/home/agenda';
 
-export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, selectedDate, onSelectDate }) {
-  const weeks = useMemo(() => buildWeeklyAgendaData(agenda), [agenda]);
+export default function WeeklyAgendaBoard({
+  agenda,
+  membersById,
+  familiesById,
+  selectedDate,
+  onSelectDate,
+  service = 'clinica',
+}) {
+  const normalizedService = (typeof service === 'string' && service.trim().toLowerCase()) || 'clinica';
+  const weeks = useMemo(() => buildWeeklyAgendaData(agenda, 52, normalizedService), [agenda, normalizedService]);
   const firstAvailableIndex = useMemo(
     () => weeks.findIndex((week) => week.availableCount > 0),
     [weeks],
   );
   const [weekIndex, setWeekIndex] = useState(() => (firstAvailableIndex >= 0 ? firstAvailableIndex : 0));
+  const [managementMode, setManagementMode] = useState(false);
+  const [blockedDays, setBlockedDays] = useState([]);
+  const [showEmptyDays, setShowEmptyDays] = useState(false);
   const autoSnapRef = useRef(false);
+
+  const handleBlockDay = (isoDate) => {
+    setBlockedDays(prev => {
+      if (prev.includes(isoDate)) {
+        return prev.filter(d => d !== isoDate);
+      }
+      return [...prev, isoDate];
+    });
+  };
 
   useEffect(() => {
     if (!autoSnapRef.current && firstAvailableIndex >= 0) {
@@ -59,8 +83,40 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
 
   const week = weeks[Math.min(weekIndex, weeks.length - 1)];
 
+  const filteredDays = useMemo(() => {
+    if (showEmptyDays) {
+      return week.days;
+    }
+    return week.days.filter(day => {
+      const weekday = day.date.getDay();
+      if (weekday === WEEKDAYS.SATURDAY || weekday === WEEKDAYS.SUNDAY) {
+        return day.appointments.length > 0;
+      }
+      const schedule = getScheduleForWeekday(day.date.getDay(), normalizedService);
+      if (schedule.length === 0) {
+        return day.appointments.length > 0;
+      }
+      return true;
+    });
+  }, [week, showEmptyDays, normalizedService]);
+
   const handlePrevWeek = () => setWeekIndex((prev) => Math.max(prev - 1, 0));
   const handleNextWeek = () => setWeekIndex((prev) => Math.min(prev + 1, weeks.length - 1));
+
+  const handleGoToToday = () => {
+    const today = new Date();
+    const todayIso = formatISODateLocal(today);
+    const todayWeekIndex = weeks.findIndex(week => week.days.some(day => day.isoDate === todayIso));
+    if (todayWeekIndex >= 0) {
+      setWeekIndex(todayWeekIndex);
+    }
+  };
+
+  const isTodayInView = useMemo(() => {
+    const today = new Date();
+    const todayIso = formatISODateLocal(today);
+    return week.days.some(day => day.isoDate === todayIso);
+  }, [week]);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
@@ -82,6 +138,27 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setManagementMode(prev => !prev)}
+            className={`px-3 py-2 rounded-xl border text-xs font-medium ${managementMode ? 'bg-sky-100 border-sky-300 text-sky-700' : 'border-slate-300 hover:bg-slate-50'}`}
+          >
+            {managementMode ? 'Finalizar gestión' : 'Gestionar disponibilidad'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowEmptyDays(prev => !prev)}
+            className={`px-3 py-2 rounded-xl border text-xs font-medium ${showEmptyDays ? 'bg-sky-100 border-sky-300 text-sky-700' : 'border-slate-300 hover:bg-slate-50'}`}
+          >
+            {showEmptyDays ? 'Ocultar días vacíos' : 'Mostrar días vacíos'}
+          </button>
+          <button
+            type="button"
+            onClick={handleGoToToday}
+            className={`px-3 py-2 rounded-xl border text-sm font-medium ${isTodayInView ? 'bg-sky-100 border-sky-300 text-sky-700' : 'border-slate-300 hover:bg-slate-50'}`}
+          >
+            Hoy
+          </button>
+          <button
+            type="button"
             onClick={handlePrevWeek}
             disabled={weekIndex === 0}
             className="px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium hover:bg-slate-50 disabled:opacity-40"
@@ -89,7 +166,7 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
             Semana anterior
           </button>
           <span className="text-xs text-slate-500">
-            Semana {weekIndex + 1} / {weeks.length}
+            Semana {getWeekOfYear(week.start)} / 52
           </span>
           <button
             type="button"
@@ -103,7 +180,7 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-3">
-        {week.days.map((day) => {
+        {filteredDays.map((day) => {
           const enrichedAppointments = day.appointments.map((item) => {
             const member = item.memberId ? membersById[item.memberId] : null;
             const primeraInfo = normalizePrimeraConsultaInfo(
@@ -128,6 +205,7 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
             };
           });
           const isSelected = selectedDate === day.isoDate;
+          const isBlocked = blockedDays.includes(day.isoDate);
           const firstTimeAppointments = enrichedAppointments.filter((item) => Boolean(item.primeraConsulta));
           const followUpAppointments = enrichedAppointments.filter((item) => !item.primeraConsulta);
           const showGroupedSections = firstTimeAppointments.length > 0 && followUpAppointments.length > 0;
@@ -154,7 +232,9 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
 
           const availableSlotsCount = day.futureSlots.length;
           let availabilityClass = 'bg-slate-50/60 border-slate-200';
-          if (!day.isPast) {
+          if (isBlocked) {
+            availabilityClass = 'bg-gray-200 border-gray-400';
+          } else if (!day.isPast) {
             if (availableSlotsCount === 0) {
               availabilityClass = 'bg-rose-50 border-rose-300';
             } else if (availableSlotsCount <= 3) {
@@ -182,6 +262,8 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
                 </div>
                 {day.isPast ? (
                   <span className="text-[10px] uppercase tracking-wide text-slate-400">Pasado</span>
+                ) : isBlocked ? (
+                  <span className="text-[10px] uppercase tracking-wide text-gray-500">Bloqueado</span>
                 ) : day.futureSlots.length > 0 ? (
                   <span className="text-[10px] uppercase tracking-wide text-emerald-700">
                     {day.futureSlots.length} libres
@@ -221,7 +303,7 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
                 )}
               </div>
 
-              {!day.isPast && day.futureSlots.length > 0 && (
+              {!day.isPast && day.futureSlots.length > 0 && !isBlocked && (
                 <div className="flex flex-wrap gap-1">
                   {day.futureSlots.map((slot) => (
                     <span
@@ -239,16 +321,30 @@ export default function WeeklyAgendaBoard({ agenda, membersById, familiesById, s
                   type="button"
                   onClick={() => onSelectDate(day.isoDate)}
                   className="text-xs px-3 py-1 rounded-lg border border-slate-300 hover:bg-white transition"
+                  disabled={isBlocked}
                 >
                   Ver día
                 </button>
+              )}
+
+              {managementMode && !day.isPast && (
+                <div className="mt-auto pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBlockDay(day.isoDate)}
+                    className={`w-full text-xs px-3 py-2 rounded-lg border ${isBlocked ? 'border-emerald-300 text-emerald-700 hover:bg-emerald-50' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}`}
+                  >
+                    {isBlocked ? 'Desbloquear día' : 'Bloquear día'}
+                  </button>
+                </div>
               )}
             </div>
           );
         })}
       </div>
 
-      {firstAvailableIndex >= 0 && (
+
+          {firstAvailableIndex >= 0 && (
         <div className="flex justify-end">
           <button
             type="button"

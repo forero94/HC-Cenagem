@@ -185,18 +185,27 @@ export default function StepEstudiosComplementarios({ groupId, value = {}, onCha
     [onChange],
   );
 
+  const fallbackField = 'estudiosComplementariosNotas';
+  const fallbackValue = normalizeValue(value[fallbackField]);
+  const fallbackTextareaClass = `${baseTextareaClass} min-h-[140px] w-full`;
+  const renderFallbackTextarea = () => (
+    <textarea
+      className={fallbackTextareaClass}
+      value={fallbackValue}
+      placeholder="Escribí en texto libre los estudios que aporta el paciente (ej.: ecografías, laboratorios, biopsias)."
+      onChange={(event) => handleValueChange(fallbackField, event.target.value)}
+    />
+  );
+
   if (config.show === false) {
-    return (
-      <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-sm text-amber-700">
-        Para este motivo no se registran estudios complementarios estándar. Utilizá las notas del caso si necesitás detallar procedimientos.
-      </section>
-    );
+    return renderFallbackTextarea();
   }
 
   if (config.mode === 'checklist' && config.checklist) {
     return (
       <div className="grid gap-6">
         <ChecklistRenderer checklist={config.checklist} value={value} onValueChange={handleValueChange} />
+        {renderFallbackTextarea()}
       </div>
     );
   }

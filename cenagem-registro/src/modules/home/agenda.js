@@ -5,20 +5,247 @@
 import { MOTIVO_CONSULTA_GROUPS } from '@/lib/motivosConsulta.js';
 
 export const AGENDA_STORAGE_KEY = 'cenagem-agenda-v1';
-export const SLOT_CAPACITY = 2;
+export const DEFAULT_SERVICE = 'clinica';
 
-export const WEEKLY_SCHEDULE = {
-  1: ['08:00', '09:00', '10:00', '11:00'], // Lunes (sin cupo a las 12)
-  2: ['08:00', '09:00', '10:00', '11:00', '12:00'],
-  4: ['08:00', '09:00', '10:00', '11:00', '12:00'],
-  5: ['08:00', '09:00', '10:00', '11:00', '12:00'],
+export const WEEKDAYS = {
+  SUNDAY: 0,
+  MONDAY: 1,
+  TUESDAY: 2,
+  WEDNESDAY: 3,
+  THURSDAY: 4,
+  FRIDAY: 5,
+  SATURDAY: 6,
 };
 
-export const ALL_SCHEDULED_TIMES = Array.from(new Set(Object.values(WEEKLY_SCHEDULE).flat())).sort((a, b) =>
-  a.localeCompare(b),
-);
+export const SERVICE_CONFIG = {
+  clinica: {
+    defaultCapacity: 3,
+    overbookFallbackTime: '13:00',
+    weeklySchedule: {
+      [WEEKDAYS.MONDAY]: [
+        { time: '08:00', capacity: 3, optional: true },
+        { time: '09:00', capacity: 3 },
+        { time: '10:00', capacity: 3 },
+        { time: '11:00', capacity: 3 },
+        { time: '12:00', capacity: 3, note: 'Entrega de resultados' },
+      ],
+      [WEEKDAYS.TUESDAY]: [
+        { time: '08:00', capacity: 3, optional: true },
+        { time: '09:00', capacity: 3 },
+        { time: '10:00', capacity: 3 },
+        { time: '11:00', capacity: 3 },
+        { time: '12:00', capacity: 3, note: 'Entrega de resultados' },
+      ],
+      [WEEKDAYS.THURSDAY]: [
+        { time: '08:00', capacity: 3, optional: true },
+        { time: '09:00', capacity: 3 },
+        { time: '10:00', capacity: 3 },
+        { time: '11:00', capacity: 3 },
+        { time: '12:00', capacity: 3, note: 'Entrega de resultados' },
+      ],
+      [WEEKDAYS.FRIDAY]: [
+        { time: '08:00', capacity: 3, optional: true },
+        { time: '09:00', capacity: 3 },
+        { time: '10:00', capacity: 3 },
+        { time: '11:00', capacity: 3 },
+        { time: '12:00', capacity: 3, note: 'Entrega de resultados' },
+      ],
+    },
+  },
+  psicologia: {
+    defaultCapacity: 1,
+    weeklySchedule: {
+      [WEEKDAYS.MONDAY]: [
+        { time: '09:00', optional: true },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+        { time: '11:30' },
+      ],
+      [WEEKDAYS.WEDNESDAY]: [
+        { time: '09:00', optional: true },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+        { time: '11:30' },
+      ],
+      [WEEKDAYS.FRIDAY]: [
+        { time: '09:00', optional: true },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+        { time: '11:30' },
+      ],
+    },
+  },
+  'test-del-sudor': {
+    defaultCapacity: 1,
+    overbookFallbackTime: '12:00',
+    maxDailyOverbook: 3,
+    weeklySchedule: {
+      [WEEKDAYS.TUESDAY]: [
+        { time: '09:00' },
+        { time: '09:30' },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+      ],
+      [WEEKDAYS.WEDNESDAY]: [
+        { time: '09:00' },
+        { time: '09:30' },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+      ],
+      [WEEKDAYS.THURSDAY]: [
+        { time: '09:00' },
+        { time: '09:30' },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+      ],
+    },
+  },
+  ecografia: {
+    defaultCapacity: 1,
+    weeklySchedule: {
+      [WEEKDAYS.MONDAY]: [
+        { time: '09:30' },
+        { time: '10:30' },
+        { time: '11:30' },
+      ],
+      [WEEKDAYS.THURSDAY]: [
+        { time: '09:30' },
+        { time: '10:30' },
+        { time: '11:30' },
+      ],
+    },
+  },
+  prenatal: {
+    defaultCapacity: 1,
+    weeklySchedule: {
+      [WEEKDAYS.TUESDAY]: [
+        { time: '09:30' },
+        { time: '10:00' },
+        { time: '11:30' },
+      ],
+    },
+  },
+  laboratorio: {
+    defaultCapacity: 15,
+    weeklySchedule: {
+      [WEEKDAYS.MONDAY]: [
+        { time: '09:00' },
+        { time: '09:30' },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+        { time: '11:30' },
+        { time: '12:00' },
+      ],
+      [WEEKDAYS.WEDNESDAY]: [
+        { time: '09:00' },
+        { time: '09:30' },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+        { time: '11:30' },
+        { time: '12:00' },
+      ],
+      [WEEKDAYS.FRIDAY]: [
+        { time: '09:00' },
+        { time: '09:30' },
+        { time: '10:00' },
+        { time: '10:30' },
+        { time: '11:00' },
+        { time: '11:30' },
+        { time: '12:00' },
+      ],
+    },
+  },
+};
 
-export const OVERBOOK_FALLBACK_TIME = '13:00';
+const normalizeServiceKey = (service) => {
+  if (typeof service === 'string') {
+    const trimmed = service.trim().toLowerCase();
+    if (trimmed) return trimmed;
+  }
+  return DEFAULT_SERVICE;
+};
+
+export function getServiceConfig(service = DEFAULT_SERVICE) {
+  const key = normalizeServiceKey(service);
+  return SERVICE_CONFIG[key] || SERVICE_CONFIG[DEFAULT_SERVICE];
+}
+
+export function getAllScheduledTimes(service = DEFAULT_SERVICE) {
+  const config = getServiceConfig(service);
+  const times = new Set();
+  const weeklySchedule = config.weeklySchedule || {};
+  Object.values(weeklySchedule).forEach((entries) => {
+    entries.forEach((entry) => {
+      const time = typeof entry === 'string' ? entry : entry?.time;
+      if (time) times.add(time);
+    });
+  });
+  return Array.from(times).sort((a, b) => a.localeCompare(b));
+}
+
+export function getScheduleForWeekday(weekday, service = DEFAULT_SERVICE) {
+  const config = getServiceConfig(service);
+  const normalizedWeekday = Number.isFinite(weekday) ? weekday : Number(weekday);
+  const entries = config.weeklySchedule?.[normalizedWeekday] || [];
+  return entries
+    .map((entry) => {
+      if (!entry) return null;
+      if (typeof entry === 'string') {
+        return { time: entry, capacity: config.defaultCapacity ?? 1 };
+      }
+      if (!entry.time) return null;
+      const capacity = Number.isFinite(entry.capacity) ? entry.capacity : config.defaultCapacity ?? 1;
+      const { time, capacity: _ignored, ...rest } = entry;
+      return { time, capacity, ...rest };
+    })
+    .filter(Boolean);
+}
+
+export function getDailyCapacityForWeekday(weekday, service = DEFAULT_SERVICE) {
+  return getScheduleForWeekday(weekday, service).reduce(
+    (sum, item) => sum + (Number.isFinite(item?.capacity) ? item.capacity : 0),
+    0,
+  );
+}
+
+export function getMaxDailyCapacity(service = DEFAULT_SERVICE) {
+  const config = getServiceConfig(service);
+  const weeklySchedule = config.weeklySchedule || {};
+  return Object.keys(weeklySchedule).reduce((max, key) => {
+    const weekday = Number(key);
+    const capacity = getDailyCapacityForWeekday(weekday, service);
+    return capacity > max ? capacity : max;
+  }, 0);
+}
+
+export function getOverbookFallbackTime(service = DEFAULT_SERVICE) {
+  const fallback = getServiceConfig(service).overbookFallbackTime;
+  return typeof fallback === 'string' && fallback.trim() ? fallback.trim() : null;
+}
+
+export function getMaxDailyOverbook(service = DEFAULT_SERVICE) {
+  const value = getServiceConfig(service).maxDailyOverbook;
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+const toBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return false;
+    return ['true', '1', 'si', 'sí', 'yes', 'y'].includes(normalized);
+  }
+  if (typeof value === 'number') return value !== 0;
+  return Boolean(value);
+};
 
 export const APPOINTMENT_STATUS_COLORS = {
   Pendiente: 'bg-amber-100 text-amber-700',
@@ -29,11 +256,6 @@ export const APPOINTMENT_STATUS_COLORS = {
 
 export function getStatusBadgeColor(status) {
   return APPOINTMENT_STATUS_COLORS[status] || 'bg-slate-200 text-slate-600';
-}
-
-export function getScheduleForWeekday(weekday) {
-  const times = WEEKLY_SCHEDULE[weekday] || [];
-  return times.map((time) => ({ time, capacity: SLOT_CAPACITY }));
 }
 
 function capitalizeFirst(text) {
@@ -75,34 +297,28 @@ export function formatFriendlyDate(isoDate) {
   return date.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-export function buildOverbookSlotsForDate(dateObj, appointments = []) {
+export function buildOverbookSlotsForDate(dateObj, appointments = [], service = DEFAULT_SERVICE) {
   if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return [];
   const isoDate = formatISODateLocal(dateObj);
   const slots = [];
-  const schedule = getScheduleForWeekday(dateObj.getDay());
+  const fallbackTime = getOverbookFallbackTime(service);
+  const maxDailyOverbook = getMaxDailyOverbook(service);
+  const existingOverbooks = appointments.filter((item) => item.sobreturno).length;
+  const hasLimit = Number.isFinite(maxDailyOverbook);
+  let remainingOverbooks = hasLimit ? Math.max(maxDailyOverbook - existingOverbooks, 0) : Number.POSITIVE_INFINITY;
 
-  for (const { time, capacity } of schedule) {
-    const usedCount = appointments.filter((item) => item.time === time).length;
-    if (usedCount >= capacity) {
-      const seatOption = buildSeatOption(dateObj, isoDate, time, usedCount, capacity + 1);
+  if (fallbackTime) {
+    while (remainingOverbooks > 0) {
+      const fallbackCount = appointments.filter((item) => item.time === fallbackTime).length + (slots.length);
+      const fallbackSeat = buildSeatOption(dateObj, isoDate, fallbackTime, fallbackCount, 1);
       slots.push({
-        ...seatOption,
-        label: `${seatOption.label} · Sobreturno`,
-        shortLabel: `${seatOption.time} hs · Sobreturno`,
+        ...fallbackSeat,
+        label: `${fallbackSeat.label} · Sobreturno`,
+        shortLabel: `${fallbackSeat.time} hs · Sobreturno`,
         overbook: true,
       });
+      remainingOverbooks--;
     }
-  }
-
-  if (OVERBOOK_FALLBACK_TIME) {
-    const fallbackCount = appointments.filter((item) => item.time === OVERBOOK_FALLBACK_TIME).length;
-    const fallbackSeat = buildSeatOption(dateObj, isoDate, OVERBOOK_FALLBACK_TIME, fallbackCount, 1);
-    slots.push({
-      ...fallbackSeat,
-      label: `${fallbackSeat.label} · Fin del día`,
-      shortLabel: `${fallbackSeat.time} hs · Fin del día`,
-      overbook: true,
-    });
   }
 
   return slots;
@@ -114,17 +330,28 @@ export function addDays(baseDate, amount) {
   return copy;
 }
 
-export function collectNextAvailableSlots(agenda = [], { fromDate, limit = 12 } = {}) {
+export function collectNextAvailableSlots(agenda = [], { fromDate, limit, service = DEFAULT_SERVICE } = {}) {
+  const normalizedService = normalizeServiceKey(service);
   const slots = [];
   let cursor = fromDate ? new Date(fromDate) : new Date();
   if (Number.isNaN(cursor.getTime())) cursor = new Date();
-  const seenIds = new Set(agenda.map((item) => item.id));
+  const seenIds = new Set(
+    (Array.isArray(agenda) ? agenda : [])
+      .filter((item) => normalizeServiceKey(item?.service || DEFAULT_SERVICE) === normalizedService)
+      .map((item) => item.id),
+  );
+  const maxDailyCapacity = getMaxDailyCapacity(normalizedService) || 0;
+  const fallbackLimit = Math.max(maxDailyCapacity, 12);
+  const parsedLimit = Number(limit);
+  const effectiveLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : fallbackLimit;
 
   let safety = 0;
-  while (slots.length < limit && safety < 365) {
+  while (slots.length < effectiveLimit && safety < 365) {
     const isoDate = formatISODateLocal(cursor);
-    const schedule = getScheduleForWeekday(cursor.getDay());
-    const appointmentsForDay = agenda.filter((item) => item.date === isoDate);
+    const schedule = getScheduleForWeekday(cursor.getDay(), normalizedService);
+    const appointmentsForDay = (Array.isArray(agenda) ? agenda : []).filter(
+      (item) => item.date === isoDate && normalizeServiceKey(item?.service || DEFAULT_SERVICE) === normalizedService,
+    );
     const countsByTime = appointmentsForDay.reduce((acc, item) => {
       acc[item.time] = (acc[item.time] || 0) + 1;
       return acc;
@@ -136,7 +363,7 @@ export function collectNextAvailableSlots(agenda = [], { fromDate, limit = 12 } 
         const slot = buildSeatOption(cursor, isoDate, time, used, capacity);
         if (!seenIds.has(slot.id)) {
           slots.push(slot);
-          if (slots.length >= limit) break;
+          if (slots.length >= effectiveLimit) break;
         }
       }
     }
@@ -146,6 +373,130 @@ export function collectNextAvailableSlots(agenda = [], { fromDate, limit = 12 } 
   }
 
   return slots;
+}
+
+const ensureDate = (value) => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value !== 'string') return null;
+
+  const isoDateRegex = /^(\d{4})-(\d{2})-(\d{2})/;
+  const match = value.match(isoDateRegex);
+
+  if (match) {
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1;
+    const day = parseInt(match[3], 10);
+    const date = new Date(year, month, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const extractServiceData = (serviceData, serviceDetails) => {
+  if (serviceData && typeof serviceData === 'object') return serviceData;
+  if (serviceDetails && typeof serviceDetails === 'object') {
+    if (serviceDetails.data && typeof serviceDetails.data === 'object') {
+      return serviceDetails.data;
+    }
+    return serviceDetails;
+  }
+  return {};
+};
+
+const isWeekday = (weekday) =>
+  weekday === WEEKDAYS.MONDAY
+  || weekday === WEEKDAYS.TUESDAY
+  || weekday === WEEKDAYS.WEDNESDAY
+  || weekday === WEEKDAYS.THURSDAY
+  || weekday === WEEKDAYS.FRIDAY;
+
+export function validateServiceDateConstraints({
+  service = DEFAULT_SERVICE,
+  date,
+  time,
+  serviceData,
+  serviceDetails,
+  sobreturno = false,
+} = {}) {
+  const normalizedService = normalizeServiceKey(service);
+  const dateObj = ensureDate(date);
+  if (!dateObj) return null;
+  const weekday = dateObj.getDay();
+  const data = extractServiceData(serviceData, serviceDetails);
+  const scheduleForDay = getScheduleForWeekday(weekday, normalizedService);
+  const fallbackTime = getOverbookFallbackTime(normalizedService);
+  const normalizedTime = typeof time === 'string' ? time.slice(0, 5) : null;
+  const skipGeneralValidation =
+    normalizedService === 'laboratorio' && (toBoolean(data?.urgente) || sobreturno);
+
+  if (!skipGeneralValidation) {
+    if (!scheduleForDay.length) {
+      return 'No hay turnos disponibles para este servicio en la fecha seleccionada.';
+    }
+    if (
+      normalizedTime
+      && !scheduleForDay.some((slot) => slot.time === normalizedTime)
+      && normalizedTime !== fallbackTime
+    ) {
+      return 'El horario seleccionado no forma parte de la agenda para este servicio.';
+    }
+  }
+
+  if (normalizedService === 'clinica') {
+    const isPregnant = toBoolean(data?.embarazada);
+    if (isPregnant && ![WEEKDAYS.MONDAY, WEEKDAYS.THURSDAY].includes(weekday)) {
+      return 'Las consultas de pacientes embarazadas se agendan los días lunes o jueves (programá el turno desde Ecografía).';
+    }
+  }
+
+  if (normalizedService === 'laboratorio') {
+    if (!isWeekday(weekday)) {
+      return 'Los turnos de laboratorio se gestionan de lunes a viernes.';
+    }
+    const tiposSeleccionados =
+      data?.tiposSeleccionados && typeof data.tiposSeleccionados === 'object' ? data.tiposSeleccionados : {};
+    const modalidadRaw = typeof data?.modalidad === 'string' ? data.modalidad.toLowerCase().trim() : '';
+    const modalidad = modalidadRaw || 'extraccion';
+    const urgente = toBoolean(data?.urgente);
+
+    if (urgente || sobreturno) {
+      return null;
+    }
+
+    if (toBoolean(tiposSeleccionados.oncohemato)) {
+      return null;
+    }
+
+    const requiereMolecular =
+      toBoolean(tiposSeleccionados.molecular)
+      || toBoolean(tiposSeleccionados.experimental)
+      || toBoolean(tiposSeleccionados.adn);
+
+    if (modalidad === 'recepcion') {
+      if (requiereMolecular && weekday !== WEEKDAYS.WEDNESDAY) {
+        return 'Las muestras moleculares, de cáncer o fibrosis quística se reciben únicamente los miércoles.';
+      }
+      if (toBoolean(tiposSeleccionados.citogenetica) && ![WEEKDAYS.MONDAY, WEEKDAYS.FRIDAY].includes(weekday)) {
+        return 'Las muestras citogenéticas se reciben los días lunes y viernes.';
+      }
+      if (
+        !requiereMolecular
+        && !toBoolean(tiposSeleccionados.citogenetica)
+        && !toBoolean(tiposSeleccionados.oncohemato)
+        && ![WEEKDAYS.MONDAY, WEEKDAYS.WEDNESDAY, WEEKDAYS.FRIDAY].includes(weekday)
+      ) {
+        return 'La recepción de muestras se realiza los días lunes, miércoles y viernes.';
+      }
+    } else if (![WEEKDAYS.MONDAY, WEEKDAYS.WEDNESDAY, WEEKDAYS.FRIDAY].includes(weekday)) {
+      return 'Las extracciones de laboratorio se realizan los días lunes, miércoles y viernes.';
+    }
+  }
+
+  return null;
 }
 
 export function getMemberDisplayName(member) {
@@ -159,18 +510,31 @@ export function getMemberDisplayName(member) {
   );
 }
 
-export function seedAgendaFromMembers(members = []) {
+export function seedAgendaFromMembers(members = [], service = DEFAULT_SERVICE) {
+  const normalizedService = normalizeServiceKey(service);
   const today = new Date();
   const todayIso = formatISODateLocal(today);
-  let schedule = getScheduleForWeekday(today.getDay());
+  let schedule = getScheduleForWeekday(today.getDay(), normalizedService);
   if (!schedule.length) {
-    schedule = getScheduleForWeekday(2); // Martes como fallback
+    for (let offset = 1; offset <= 7 && !schedule.length; offset += 1) {
+      const candidate = addDays(today, offset);
+      schedule = getScheduleForWeekday(candidate.getDay(), normalizedService);
+    }
   }
 
-  let slots = schedule.flatMap(({ time, capacity }) => Array.from({ length: capacity }, () => time));
+  let slots = schedule.flatMap(({ time, capacity }) => {
+    const safeCapacity = Number.isFinite(capacity) && capacity > 0 ? capacity : 1;
+    return Array.from({ length: safeCapacity }, () => time);
+  });
 
   if (!slots.length) {
-    slots = ALL_SCHEDULED_TIMES.flatMap((time) => Array.from({ length: SLOT_CAPACITY }, () => time));
+    const allTimes = getAllScheduledTimes(normalizedService);
+    const defaultCapacity = getServiceConfig(normalizedService).defaultCapacity || 1;
+    slots = allTimes.flatMap((time) => Array.from({ length: defaultCapacity }, () => time));
+  }
+
+  if (!slots.length) {
+    slots = ['08:00'];
   }
 
   return members
@@ -206,7 +570,8 @@ export function normalizeFamilyCodeInput(value) {
   return `AG-${digits.padStart(4, '0')}`;
 }
 
-export function buildWeeklyAgendaData(agenda = [], weeksCount = 6) {
+export function buildWeeklyAgendaData(agenda = [], weeksCount = 52, service = DEFAULT_SERVICE) {
+  const normalizedService = normalizeServiceKey(service);
   const today = new Date();
   const startOfWeek = (date) => {
     const copy = new Date(date);
@@ -226,14 +591,27 @@ export function buildWeeklyAgendaData(agenda = [], weeksCount = 6) {
     for (let d = 0; d < 7; d += 1) {
       const dayDate = addDays(start, d);
       const isoDate = formatISODateLocal(dayDate);
-      const dayAppointments = agenda
-        .filter((item) => item.date === isoDate)
+      const dayAppointments = (Array.isArray(agenda) ? agenda : [])
+        .filter(
+          (item) =>
+            item.date === isoDate
+            && normalizeServiceKey(item?.service || DEFAULT_SERVICE) === normalizedService,
+        )
         .slice()
         .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
+      const scheduleForDay = getScheduleForWeekday(dayDate.getDay(), normalizedService);
+      const dailyCapacity = scheduleForDay.reduce(
+        (total, slot) => total + (Number.isFinite(slot.capacity) ? slot.capacity : 0),
+        0,
+      );
       const futureSlots = collectNextAvailableSlots(
         agenda,
-        { fromDate: isoDate, limit: SLOT_CAPACITY * (WEEKLY_SCHEDULE[dayDate.getDay()] || []).length || SLOT_CAPACITY },
+        {
+          fromDate: isoDate,
+          limit: dailyCapacity || getMaxDailyCapacity(normalizedService) || 12,
+          service: normalizedService,
+        },
       ).filter((slot) => slot.date === isoDate);
 
       days.push({
@@ -284,4 +662,16 @@ export function normalizePrimeraConsultaInfo(raw) {
     motivoGroup,
     motivoGroupLabel,
   };
+}
+
+export function getWeekOfYear(date) {
+  const target = new Date(date.valueOf());
+  const dayNr = (date.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+  }
+  return 1 + Math.ceil((firstThursday - target) / 604800000);
 }
