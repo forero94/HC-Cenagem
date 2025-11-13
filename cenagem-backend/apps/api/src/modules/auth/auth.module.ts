@@ -20,9 +20,17 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('auth.access.secret') ?? 'change-me-access',
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get<string>('auth.access.secret');
+
+        if (!secret) {
+          throw new Error(
+            'Missing auth.access.secret. Set JWT_ACCESS_SECRET via KeyVault/KMS before starting the API.',
+          );
+        }
+
+        return { secret };
+      },
     }),
     PrismaModule,
     AttachmentsModule,

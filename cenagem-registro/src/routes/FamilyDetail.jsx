@@ -6,6 +6,9 @@ import GeneticsPage from './GeneticsPage.jsx';
 import FamilyStudiesPage from './FamilyStudiesPage.jsx';
 import PhotosPage from './PhotosPage.jsx';
 import FamilyTreePage from './FamilyTreePage.jsx';
+import FamilyConsentsPage from './FamilyConsentsPage.jsx';
+import PedigreeV2 from '@/modules/pedigree-v2/PedigreeV2.jsx';
+import AddMemberModal from './AddMemberModal.jsx';
 
 import { GROUP_GUIDES } from '@/components/NewCase/groupGuides.js';
 import { MOTIVO_CONSULTA_GROUPS } from '@/lib/motivosConsulta.js';
@@ -127,6 +130,9 @@ const formatYesNo = (value) => {
   const normalized = String(value).trim().toLowerCase();
   return YES_NO_LABELS[normalized] || value;
 };
+
+const isPlainObject = (value) =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
 const appendUnit = (value, unit) => {
   if (isBlank(value)) return '';
@@ -626,10 +632,19 @@ const buildMemberPatch = (member, mergedValues, changedFields) => {
   return patch;
 };
 
-function MembersAdminTab({ members, onUpdateMember }) {
+function MembersAdminTab({
+  family,
+  members = [],
+  onCreateMember,
+  onUpdateMember,
+  onDeleteMember,
+}) {
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState({});
   const [feedback, setFeedback] = useState({});
+  const [globalStatus, setGlobalStatus] = useState(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState({});
 
   useEffect(() => {
     setDrafts((prev) => {
@@ -750,16 +765,122 @@ function MembersAdminTab({ members, onUpdateMember }) {
     }
   };
 
-  if (!members.length) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
-        No hay miembros registrados en esta familia.
-      </div>
-    );
-  }
+  const showGlobalStatus = (status) => {
+    setGlobalStatus(status);
+    if (!status || typeof window === 'undefined') return;
+    window.setTimeout(() => {
+      setGlobalStatus((prev) => {
+        if (prev !== status) return prev;
+        return null;
+      });
+    }, 3200);
+  };
+
+  const handleCreateMember = async (memberInput) => {
+    if (!onCreateMember) return null;
+    try {
+      const created = await onCreateMember(memberInput);
+      showGlobalStatus({
+        type: 'success',
+        message: 'Se agregó un nuevo miembro a la familia.',
+      });
+      return created;
+    } catch (error) {
+      showGlobalStatus({
+        type: 'error',
+        message: 'No se pudo agregar el miembro. Revisá los datos e intentá nuevamente.',
+      });
+      throw error;
+    }
+  };
+
+  const handleDeleteMember = async (member) => {
+    if (!onDeleteMember) return;
+    let confirmed = true;
+    if (typeof window !== 'undefined') {
+      const label =
+        member.filiatorios?.nombreCompleto ||
+        member.nombre ||
+        member.givenName ||
+        member.filiatorios?.iniciales ||
+        'este miembro';
+      confirmed = window.confirm(
+        `¿Eliminar el registro de ${label}? Esta acción no se puede deshacer.`,
+      );
+    }
+    if (!confirmed) return;
+    setDeleting((prev) => ({ ...prev, [member.id]: true }));
+    try {
+      await onDeleteMember(member.id);
+      showGlobalStatus({
+        type: 'success',
+        message: 'El miembro fue eliminado correctamente.',
+      });
+    } catch (error) {
+      console.error('No se pudo eliminar el miembro', error);
+      showGlobalStatus({
+        type: 'error',
+        message: 'No se pudo eliminar el miembro. Intentá nuevamente.',
+      });
+    } finally {
+      setDeleting((prev) => {
+        const next = { ...prev };
+        delete next[member.id];
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="text-sm text-slate-600">
+          Administrá los integrantes que están en seguimiento dentro de la familia.
+        </div>
+        {onCreateMember && (
+          <button
+            type="button"
+            onClick={() => {
+              showGlobalStatus(null);
+              setIsAddModalOpen(true);
+            }}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-xs font-semibold text-white shadow hover:bg-slate-800"
+          >
+            + Agregar miembro
+          </button>
+        )}
+      </div>
+
+      {globalStatus && (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-xs font-medium ${
+            globalStatus.type === 'error'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          }`}
+        >
+          {globalStatus.message}
+        </div>
+      )}
+
+      {!members.length && (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600 shadow-sm">
+          <p>No hay miembros registrados en esta familia.</p>
+          {onCreateMember && (
+            <button
+              type="button"
+              onClick={() => {
+                showGlobalStatus(null);
+                setIsAddModalOpen(true);
+              }}
+              className="mt-4 px-4 py-2 rounded-xl border border-slate-900 text-xs font-semibold text-slate-900 hover:bg-slate-50"
+            >
+              Cargar primer integrante
+            </button>
+          )}
+        </div>
+      )}
+
       {members.map((member) => {
         const isSaving = Boolean(saving[member.id]);
         const hasChanges = Boolean(drafts[member.id] && Object.keys(drafts[member.id]).length);
@@ -767,7 +888,7 @@ function MembersAdminTab({ members, onUpdateMember }) {
         const base = baseValuesMap.get(member.id) || memberToFormValues(member);
         return (
           <div key={member.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm grid gap-4">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-slate-900">
                   {member.filiatorios?.iniciales || '—'} · {base.nombre || 'Sin nombre'} {base.apellido || ''}
@@ -776,7 +897,17 @@ function MembersAdminTab({ members, onUpdateMember }) {
                   {member.rol || 'Sin rol asignado'}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {onDeleteMember && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMember(member)}
+                    disabled={Boolean(deleting[member.id])}
+                    className="px-3 py-1.5 rounded-xl border border-red-200 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+                  >
+                    {deleting[member.id] ? 'Eliminando…' : 'Eliminar'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleReset(member.id)}
@@ -917,7 +1048,7 @@ function MembersAdminTab({ members, onUpdateMember }) {
 
             {status && (
               <div
-                className={`text-xs ${ 
+                className={`text-xs ${
                   status.type === 'error' ? 'text-red-600' : 'text-emerald-600'
                 }`}
               >
@@ -927,6 +1058,14 @@ function MembersAdminTab({ members, onUpdateMember }) {
           </div>
         );
       })}
+
+      {isAddModalOpen && onCreateMember && (
+        <AddMemberModal
+          family={family}
+          onAdd={handleCreateMember}
+          onClose={() => setIsAddModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -935,13 +1074,25 @@ function MembersAdminTab({ members, onUpdateMember }) {
 const TAB_LABEL = {
   resumen: 'Resumen',
   arbol: 'Árbol familiar',
+  pedigree2: 'Pedigree 2',
   miembros: 'Administrar miembros',
   complementarios: 'Estudios complementarios',
   geneticos: 'Estudios genéticos',
   fotos: 'Fotos',
+  consentimientos: 'Consentimientos',
   evoluciones: 'Ver todas las evoluciones',
 };
-const TABS_ORDER = ['resumen', 'arbol', 'miembros', 'complementarios', 'geneticos', 'fotos', 'evoluciones'];
+const TABS_ORDER = [
+  'resumen',
+  'arbol',
+  'pedigree2',
+  'miembros',
+  'complementarios',
+  'geneticos',
+  'fotos',
+  'consentimientos',
+  'evoluciones',
+];
 function FamilyDetail({
   family,
   members,
@@ -949,7 +1100,10 @@ function FamilyDetail({
   studies = [],
   onBack,
   onAddEvolution,
+  onCreateMember,
   onUpdateMember,
+  onDeleteMember,
+  onUpdateFamily,
   initialTab = 'resumen',
 }) {
   const [tab, setTab] = useState(initialTab);
@@ -1109,7 +1263,24 @@ function FamilyDetail({
     return `Motivo de consulta: ${motivo}\nEstudios genéticos: ${est}\nÚltima evolución: ${u}`;
   }, [a1, geneticsSummary, lastEv]);
 
-  const intakeData = family.intake?.administrativo || {};
+  const intakeData = useMemo(() => {
+    if (!family) return {};
+    const intake = isPlainObject(family.intake) ? family.intake : {};
+    const merged = {};
+    const mergeSource = (source) => {
+      if (isPlainObject(source)) {
+        Object.assign(merged, source);
+      }
+    };
+    mergeSource(intake.administrativo);
+    mergeSource(intake.motivo);
+    mergeSource(intake.clinico);
+    mergeSource(intake.plan);
+    mergeSource(intake.wizardPayload);
+    mergeSource(intake.wizardData);
+    mergeSource(intake.wizard);
+    return merged;
+  }, [family]);
   const intakeSections = useMemo(
     () => buildIntakeSections(intakeData, family),
     [intakeData, family],
@@ -1191,13 +1362,22 @@ function FamilyDetail({
       )}
       {tab === 'miembros' && (
         <MembersAdminTab
+          family={family}
           members={members}
+          onCreateMember={onCreateMember}
           onUpdateMember={onUpdateMember}
+          onDeleteMember={onDeleteMember}
         />
       )}
 
       {tab === 'arbol' && (
         <FamilyTreePage familyId={family.id} />
+      )}
+
+      {tab === 'pedigree2' && (
+        <>
+          {/* <PedigreeV2 family={family} members={members} /> */}
+        </>
       )}
 
       {tab === 'complementarios' && (
@@ -1210,6 +1390,10 @@ function FamilyDetail({
 
       {tab === 'fotos' && (
         <PhotosPage familyId={family.id} inline />
+      )}
+
+      {tab === 'consentimientos' && (
+        <FamilyConsentsPage familyId={family.id} inline />
       )}
 
       {tab === 'evoluciones' && (

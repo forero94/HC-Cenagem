@@ -201,6 +201,64 @@ const SCREENING_DEFS = [
   { key: "audiometria", label: "Audiometría" }
 ];
 
+const STATUS_FILTER_OPTIONS = [
+  { value: "all", label: "Todos" },
+  { value: "con-resultado", label: "Con resultado" },
+  { value: "sin-resultado", label: "Pendientes" },
+  { value: "con-adjuntos", label: "Con adjuntos" },
+];
+
+const STUDY_STATUS_STYLES = {
+  REQUESTED: {
+    label: "Pendiente",
+    badge: "bg-amber-50 text-amber-700 border border-amber-200",
+  },
+  IN_PROGRESS: {
+    label: "En proceso",
+    badge: "bg-sky-50 text-sky-700 border border-sky-200",
+  },
+  COMPLETED: {
+    label: "Con resultado",
+    badge: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  },
+  DONE: {
+    label: "Con resultado",
+    badge: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  },
+  RESULT_READY: {
+    label: "Con resultado",
+    badge: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  },
+  CANCELLED: {
+    label: "Cancelado",
+    badge: "bg-rose-50 text-rose-700 border border-rose-200",
+  },
+};
+
+const DEFAULT_STATUS_STYLE = {
+  label: "Sin estado",
+  badge: "bg-slate-100 text-slate-600 border border-slate-200",
+};
+
+const normalizeStatus = (status) => (status || "").toString().trim().toUpperCase().replace(/\s+/g, "_");
+
+const getStudyStatusStyle = (status) => {
+  const normalized = normalizeStatus(status);
+  return STUDY_STATUS_STYLES[normalized] || DEFAULT_STATUS_STYLE;
+};
+
+const pickStudyDate = (study) => {
+  const dateStr = study.resultadoFecha || study.fecha || study.createdAt;
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatShortDate = (date) => {
+  if (!date) return "—";
+  return date.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+};
+
 function ScreeningRow({ label, value, onToggleOrdered, onToggleDone, onResultChange }) {
   const { ordered = false, done = false, result = "" } = value || {};
   const showResultInput = !!done;
@@ -223,16 +281,13 @@ function ScreeningRow({ label, value, onToggleOrdered, onToggleDone, onResultCha
         <span className={`text-sm ${!ordered ? "text-slate-400" : ""}`}>Realizado</span>
       </div>
       <div className="md:col-span-3">
-        {showResultInput ? (
-          <input
-            value={result}
-            onChange={(e)=> onResultChange(e.target.value)}
-            placeholder="Normal"
-            className="w-full px-3 py-2 rounded-xl border border-slate-300"
-          />
-        ) : (
-          <input disabled placeholder="—" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50" />
-        )}
+        <input
+          value={showResultInput ? result : ''}
+          onChange={(e)=> onResultChange(e.target.value)}
+          placeholder={showResultInput ? "Normal" : "—"}
+          disabled={!showResultInput}
+          className={`w-full px-3 py-2 rounded-xl border ${showResultInput ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"}`}
+        />
       </div>
     </div>
   );
@@ -394,6 +449,9 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
   } = useFamilyStudiesStore(familyId);
 
   const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
 
   useEffect(() => {
     if (!selectedMemberId && members.length > 0) {
@@ -405,6 +463,12 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
     }
   }, [members, selectedMemberId]);
 
+  useEffect(() => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setTypeFilter("all");
+  }, [selectedMemberId]);
+
   const studyCountByMember = useMemo(() => {
     const map = new Map();
     for (const s of studies) {
@@ -412,16 +476,6 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
     }
     return map;
   }, [studies]);
-
-  const filteredStudies = useMemo(() => {
-    if (!selectedMemberId) return [];
-    return studies.filter(s => s.memberId === selectedMemberId);
-  }, [studies, selectedMemberId]);
-
-  const activeMember = useMemo(() => {
-    if (!selectedMemberId) return null;
-    return members.find(m => m.id === selectedMemberId) || null;
-  }, [selectedMemberId, members]);
 
   const attachmentsByStudy = useMemo(() => {
     const map = new Map();
@@ -433,6 +487,88 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
     });
     return map;
   }, [attachments]);
+
+  const memberStudies = useMemo(() => {
+    if (!selectedMemberId) return [];
+    return studies.filter((study) => study.memberId === selectedMemberId);
+  }, [studies, selectedMemberId]);
+
+  const typeOptions = useMemo(() => {
+    const set = new Set();
+    memberStudies.forEach((study) => {
+      if (study.tipo) set.add(study.tipo);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }, [memberStudies]);
+
+  const filteredStudies = useMemo(() => {
+    const text = searchTerm.trim().toLowerCase();
+    return memberStudies.filter((study) => {
+      if (text) {
+        const haystack = `${study.tipo || ""} ${study.nombre || ""} ${study.descripcion || ""} ${study.resultado || ""}`.toLowerCase();
+        if (!haystack.includes(text)) return false;
+      }
+      if (statusFilter === "con-resultado" && !study.resultado?.trim()) return false;
+      if (statusFilter === "sin-resultado" && study.resultado?.trim()) return false;
+      if (statusFilter === "con-adjuntos") {
+        const studyAttachments = attachmentsByStudy.get(study.id) || [];
+        if (!studyAttachments.length) return false;
+      }
+      if (typeFilter !== "all" && (study.tipo || "") !== typeFilter) return false;
+      return true;
+    });
+  }, [memberStudies, searchTerm, statusFilter, typeFilter, attachmentsByStudy]);
+
+  const sortedStudies = useMemo(
+    () =>
+      [...filteredStudies].sort((a, b) => {
+        const dateA = pickStudyDate(a)?.getTime() || 0;
+        const dateB = pickStudyDate(b)?.getTime() || 0;
+        return dateB - dateA;
+      }),
+    [filteredStudies],
+  );
+
+  const summaryStats = useMemo(() => {
+    let withResult = 0;
+    let withAttachment = 0;
+    let latest = null;
+    memberStudies.forEach((study) => {
+      if (study.resultado?.trim()) withResult++;
+      if ((attachmentsByStudy.get(study.id) || []).length) withAttachment++;
+      const date = pickStudyDate(study);
+      if (date && (!latest || date > latest)) {
+        latest = date;
+      }
+    });
+    return {
+      total: memberStudies.length,
+      withResult,
+      pending: Math.max(memberStudies.length - withResult, 0),
+      withAttachment,
+      lastUpdate: latest,
+    };
+  }, [memberStudies, attachmentsByStudy]);
+
+  const highlightStudies = useMemo(
+    () =>
+      [...memberStudies]
+        .sort((a, b) => {
+          const dateA = pickStudyDate(a)?.getTime() || 0;
+          const dateB = pickStudyDate(b)?.getTime() || 0;
+          return dateB - dateA;
+        })
+        .slice(0, 3),
+    [memberStudies],
+  );
+
+  const activeMember = useMemo(() => {
+    if (!selectedMemberId) return null;
+    return members.find(m => m.id === selectedMemberId) || null;
+  }, [selectedMemberId, members]);
+
+  const hasActiveFilters = searchTerm.trim().length > 0 || statusFilter !== "all" || typeFilter !== "all";
+  const resultsPercent = summaryStats.total ? Math.round((summaryStats.withResult / summaryStats.total) * 100) : 0;
 
   const screening = activeMember ? getMemberScreening(activeMember.id) : {};
   const valueFor = (key) => screening[key] || { ordered: false, done: false, result: "" };
@@ -463,6 +599,12 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
   const handleResult = (key, text) => {
     if (!activeMember) return;
     upsertMemberScreening(activeMember.id, key, { result: text });
+  };
+
+  const handleResetFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setTypeFilter("all");
   };
 
   const handleCreateStudy = async ({ tipo, resultado, file }) => {
@@ -550,6 +692,156 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
 
       <div className="grid md:grid-cols-[minmax(0,1fr)_280px] gap-3">
         <div className="grid gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm grid gap-4">
+            <div>
+              <div className="text-sm font-semibold">Resumen y filtros</div>
+              <div className="text-xs text-slate-500">Explorá el avance de los estudios del miembro activo.</div>
+            </div>
+            {activeMember ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                  <div>
+                    {activeMember.filiatorios?.iniciales || activeMember.rol} · {activeMember.nombre || "—"}
+                  </div>
+                  <div>
+                    {summaryStats.total} estudio{summaryStats.total === 1 ? "" : "s"} registrados
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Estudios</div>
+                    <div className="text-2xl font-semibold text-slate-900">{summaryStats.total}</div>
+                    <div className="text-[11px] text-slate-500">Registrados</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Resultados</div>
+                    <div className="text-2xl font-semibold text-slate-900">{summaryStats.withResult}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {summaryStats.total ? `${resultsPercent}% con resultado` : "Sin datos"} · Pendientes: {summaryStats.pending}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Adjuntos</div>
+                    <div className="text-2xl font-semibold text-slate-900">{summaryStats.withAttachment}</div>
+                    <div className="text-[11px] text-slate-500">Estudios con soportes</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500">Última actualización</div>
+                    <div className="text-xl font-semibold text-slate-900">
+                      {summaryStats.lastUpdate ? formatShortDate(summaryStats.lastUpdate) : "—"}
+                    </div>
+                    <div className="text-[11px] text-slate-500">Fecha más reciente</div>
+                  </div>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+                  <div className="grid gap-3">
+                    <div className="grid gap-1">
+                      <label className="text-xs font-medium text-slate-600" htmlFor="studies-search">
+                        Buscar estudios
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <input
+                          id="studies-search"
+                          type="search"
+                          value={searchTerm}
+                          onChange={(e)=> setSearchTerm(e.target.value)}
+                          placeholder="Tipo, resultado u observaciones"
+                          className="w-full flex-1 rounded-xl border border-slate-300 px-3 py-2"
+                        />
+                        {hasActiveFilters && (
+                          <button
+                            type="button"
+                            onClick={handleResetFilters}
+                            className="whitespace-nowrap rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+                          >
+                            Limpiar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid gap-1">
+                      <span className="text-xs font-medium text-slate-600">Estado</span>
+                      <div className="flex flex-wrap gap-2">
+                        {STATUS_FILTER_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setStatusFilter(option.value)}
+                            className={`rounded-full border px-3 py-1.5 text-xs ${statusFilter === option.value ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {typeOptions.length > 1 && (
+                      <div className="grid gap-1">
+                        <span className="text-xs font-medium text-slate-600">Tipo de estudio</span>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setTypeFilter("all")}
+                            className={`rounded-full border px-3 py-1.5 text-xs ${typeFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                          >
+                            Todos
+                          </button>
+                          {typeOptions.map((tipo) => (
+                            <button
+                              key={tipo}
+                              type="button"
+                              onClick={() => setTypeFilter(tipo)}
+                              className={`rounded-full border px-3 py-1.5 text-xs ${typeFilter === tipo ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                            >
+                              {tipo}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
+                    <div className="text-xs font-semibold text-slate-600">Últimos movimientos</div>
+                    {highlightStudies.length === 0 ? (
+                      <div className="mt-2 text-xs text-slate-500">
+                        Registrá estudios para ver la línea de tiempo reciente.
+                      </div>
+                    ) : (
+                      <div className="mt-3 grid gap-3">
+                        {highlightStudies.map((study) => {
+                          const statusStyle = getStudyStatusStyle(study.estado);
+                          const dateLabel = formatShortDate(pickStudyDate(study));
+                          const resultPreview = study.resultado?.trim();
+                          const title = study.nombre || study.descripcion || study.tipo || "Estudio";
+                          return (
+                            <div key={study.id} className="relative pl-4">
+                              <span className="absolute left-0 top-2 h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />
+                              <div className="text-sm font-semibold text-slate-900">{title}</div>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${statusStyle.badge}`}>
+                                  {statusStyle.label}
+                                </span>
+                                <span>{dateLabel}</span>
+                              </div>
+                              {resultPreview && (
+                                <div className="text-xs text-slate-600">
+                                  {resultPreview.length > 120 ? `${resultPreview.slice(0, 117)}…` : resultPreview}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-slate-500">
+                Agregá integrantes para comenzar a registrar y filtrar estudios.
+              </div>
+            )}
+          </div>
+
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
               <div>
@@ -587,20 +879,33 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm grid gap-2">
-            <div className="text-sm font-semibold">
-              Estudios cargados {selectedMemberId ? `· ${members.find(m=>m.id===selectedMemberId)?.filiatorios?.iniciales || "Miembro"}` : ""}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold">
+                Estudios cargados {selectedMemberId ? `· ${members.find(m=>m.id===selectedMemberId)?.filiatorios?.iniciales || "Miembro"}` : ""}
+              </div>
+              {memberStudies.length > 0 && (
+                <div className="text-xs text-slate-500">
+                  {sortedStudies.length} de {memberStudies.length} visibles
+                </div>
+              )}
             </div>
             <div className="grid gap-2">
-              {filteredStudies.length === 0 && (
+              {memberStudies.length === 0 && (
                 <div className="text-sm text-slate-500">No hay estudios registrados para este miembro.</div>
               )}
-              {filteredStudies.map((study) => {
+              {memberStudies.length > 0 && sortedStudies.length === 0 && (
+                <div className="text-sm text-slate-500">
+                  No hay estudios que coincidan con los filtros aplicados.
+                </div>
+              )}
+              {sortedStudies.map((study) => {
                 const member = study.memberId ? members.find((item) => item.id === study.memberId) : null;
                 const studyAttachments = attachmentsByStudy.get(study.id) || [];
                 const memberLabel = member
                   ? `${member.filiatorios?.iniciales || member.rol} · ${member.nombre || "—"}`
                   : "Familia";
                 const theme = themeForStudyType(study.tipo);
+                const statusStyle = getStudyStatusStyle(study.estado);
                 return (
                   <article
                     key={study.id}
@@ -610,16 +915,22 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
                     <div className="px-4 py-3 grid gap-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="grid gap-1">
-                          <span
-                            className={`inline-flex items-center gap-1 self-start rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${theme.badgeBg} ${theme.badgeText}`}
-                          >
-                            {study.tipo || "Estudio"}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${theme.badgeBg} ${theme.badgeText}`}
+                            >
+                              {study.tipo || "Estudio"}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${statusStyle.badge}`}>
+                              {statusStyle.label}
+                            </span>
+                          </div>
                           <div className="text-base font-semibold text-slate-900">
-                            {study.nombre || "—"}
+                            {study.nombre || study.descripcion || "—"}
                           </div>
                           <div className="flex flex-wrap gap-3 text-xs text-slate-500">
-                            <span>Fecha: {fmtDate(study.fecha)}</span>
+                            <span>Pedido: {fmtDate(study.fecha)}</span>
+                            {study.resultadoFecha && <span>Resultado: {fmtDate(study.resultadoFecha)}</span>}
                             <span>Paciente: {memberLabel}</span>
                           </div>
                         </div>

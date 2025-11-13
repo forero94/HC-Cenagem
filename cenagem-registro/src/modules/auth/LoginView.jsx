@@ -101,15 +101,6 @@ export default function LoginView({ onLogin }) {
           </Button>
           </form>
 
-          <div className="mt-4 text-xs text-slate-500">
-            <p>Credenciales:</p>
-            <p className="mt-1 text-slate-600">Contraseña común: <span className="font-mono font-medium">12345678</span></p>
-            <ul className="mt-2 space-y-1 font-mono text-slate-600">
-              <li>admin@cenagem.gob.ar</li>
-              <li>medico@cenagem.gob.ar</li>
-              <li>admision@cenagem.gob.ar</li>
-            </ul>
-          </div>
         </section>
       </div>
     </main>

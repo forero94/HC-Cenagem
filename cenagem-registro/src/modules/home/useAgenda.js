@@ -9,6 +9,7 @@ import {
   formatISODateLocal,
   getMaxDailyCapacity,
   getMotivoGroupLabel,
+  normalizeMotivoGroupId,
   normalizePrimeraConsultaInfo,
   validateServiceDateConstraints,
 } from './agenda';
@@ -48,6 +49,22 @@ const mapAppointmentFromApi = (appointment) => {
     metadata && typeof metadata.serviceDetails === 'object' && metadata.serviceDetails !== null
       ? metadata.serviceDetails
       : null;
+  const serviceDetailsData =
+    serviceDetails && typeof serviceDetails.data === 'object' && serviceDetails.data !== null
+      ? serviceDetails.data
+      : null;
+  const storedMotivoGroupRaw =
+    metadata.primeraMotivoGroup
+    || serviceDetailsData?.primeraMotivoGroup
+    || metadataPrimeraInfo?.motivoGroup
+    || metadataPrimeraInfo?.motivoGroupLabel
+    || null;
+  const normalizedMotivoGroup = normalizeMotivoGroupId(storedMotivoGroupRaw);
+  const storedMotivoGroupLabel =
+    metadata.primeraMotivoGroupLabel
+    || serviceDetailsData?.primeraMotivoGroupLabel
+    || metadataPrimeraInfo?.motivoGroupLabel
+    || (normalizedMotivoGroup ? getMotivoGroupLabel(normalizedMotivoGroup) : '');
 
   return {
     id: normalizedAppointmentId || appointment.id,
@@ -69,6 +86,8 @@ const mapAppointmentFromApi = (appointment) => {
     metadata,
     primeraConsulta: primeraConsultaFlag,
     primeraConsultaInfo: metadataPrimeraInfo,
+    primeraMotivoGroup: normalizedMotivoGroup,
+    primeraMotivoGroupLabel: storedMotivoGroupLabel,
     sobreturno: sobreturnoFlag,
     service,
     serviceDetails,
@@ -78,6 +97,90 @@ const mapAppointmentFromApi = (appointment) => {
 const toIsoDateTime = (date, time = '08:00') => {
   const base = date || formatISODateLocal(new Date());
   return new Date(`${base}T${time}:00`).toISOString();
+};
+
+const normalizeServiceValue = (service) => {
+  if (typeof service === 'string') {
+    const trimmed = service.trim().toLowerCase();
+    if (trimmed) return trimmed;
+  }
+  return DEFAULT_SERVICE;
+};
+
+const buildAppointmentMetadata = (appointment = {}, fallbackService = DEFAULT_SERVICE) => {
+  const baseMetadata =
+    appointment.metadata && typeof appointment.metadata === 'object' && !Array.isArray(appointment.metadata)
+      ? { ...appointment.metadata }
+      : {};
+  baseMetadata.primeraConsulta = Boolean(appointment.primeraConsulta);
+  baseMetadata.sobreturno = Boolean(appointment.sobreturno);
+
+  if (appointment.serviceDetails) {
+    baseMetadata.serviceDetails = appointment.serviceDetails;
+  } else if (!baseMetadata.serviceDetails && appointment.metadata?.serviceDetails) {
+    baseMetadata.serviceDetails = appointment.metadata.serviceDetails;
+  }
+
+  const serviceKey = normalizeServiceValue(appointment.service || baseMetadata.service || fallbackService);
+  baseMetadata.service = serviceKey;
+  baseMetadata.servicio = serviceKey;
+
+  let normalizedInfo = null;
+  if (baseMetadata.primeraConsulta && appointment.primeraConsultaInfo) {
+    normalizedInfo = normalizePrimeraConsultaInfo({
+      ...appointment.primeraConsultaInfo,
+      motivoGroupLabel:
+        appointment.primeraConsultaInfo.motivoGroupLabel
+        || getMotivoGroupLabel(appointment.primeraConsultaInfo.motivoGroup || ''),
+    });
+    if (normalizedInfo) {
+      baseMetadata.primeraConsultaInfo = {
+        nombre: normalizedInfo.nombre,
+        apellido: normalizedInfo.apellido,
+        edad: normalizedInfo.edad,
+        motivoGroup: normalizedInfo.motivoGroup,
+        motivoGroupLabel: normalizedInfo.motivoGroupLabel,
+      };
+    }
+  }
+
+  const resolvedMotivoGroup = normalizeMotivoGroupId(
+    appointment.primeraMotivoGroup
+      || normalizedInfo?.motivoGroup
+      || appointment.serviceDetails?.data?.primeraMotivoGroup
+      || baseMetadata.serviceDetails?.data?.primeraMotivoGroup
+      || baseMetadata.primeraMotivoGroup
+      || appointment.primeraMotivoGroupLabel
+      || normalizedInfo?.motivoGroupLabel
+      || baseMetadata.primeraMotivoGroupLabel
+      || '',
+  );
+  const resolvedMotivoGroupLabel =
+    appointment.primeraMotivoGroupLabel
+    || appointment.serviceDetails?.data?.primeraMotivoGroupLabel
+    || normalizedInfo?.motivoGroupLabel
+    || baseMetadata.primeraMotivoGroupLabel
+    || (resolvedMotivoGroup ? getMotivoGroupLabel(resolvedMotivoGroup) : '');
+
+  if (resolvedMotivoGroup) {
+    baseMetadata.primeraMotivoGroup = resolvedMotivoGroup;
+    baseMetadata.primeraMotivoGroupLabel = resolvedMotivoGroupLabel;
+  }
+
+  return baseMetadata;
+};
+
+const buildAppointmentPayload = (appointment, fallbackService = DEFAULT_SERVICE) => {
+  const metadata = buildAppointmentMetadata(appointment, fallbackService);
+  return {
+    memberId: appointment.memberId || null,
+    scheduledFor: toIsoDateTime(appointment.date, appointment.time),
+    seatNumber: appointment.seat || null,
+    motive: appointment.motivo || '',
+    notes: appointment.notas || '',
+    status: STATUS_TO_API[appointment.estado || 'Pendiente'] || 'SCHEDULED',
+    metadata,
+  };
 };
 
 export function useAgenda({ initialDate, preload = true, initialService = DEFAULT_SERVICE } = {}) {
@@ -184,46 +287,7 @@ export function useAgenda({ initialDate, preload = true, initialService = DEFAUL
 
   const addAppointment = useCallback(
     async (appointment) => {
-      const baseMetadata = {
-        primeraConsulta: Boolean(appointment.primeraConsulta),
-        sobreturno: Boolean(appointment.sobreturno),
-      };
-      if (appointment.serviceDetails) {
-        baseMetadata.serviceDetails = appointment.serviceDetails;
-      }
-      if (!('service' in baseMetadata)) {
-        baseMetadata.service = appointment.service || service || DEFAULT_SERVICE;
-      }
-      if (!('servicio' in baseMetadata)) {
-        baseMetadata.servicio = appointment.service || service || DEFAULT_SERVICE;
-      }
-      if (baseMetadata.primeraConsulta && appointment.primeraConsultaInfo) {
-        const normalizedInfo = normalizePrimeraConsultaInfo({
-          ...appointment.primeraConsultaInfo,
-          motivoGroupLabel:
-            appointment.primeraConsultaInfo.motivoGroupLabel
-            || getMotivoGroupLabel(appointment.primeraConsultaInfo.motivoGroup || ''),
-        });
-        if (normalizedInfo) {
-          baseMetadata.primeraConsultaInfo = {
-            nombre: normalizedInfo.nombre,
-            apellido: normalizedInfo.apellido,
-            edad: normalizedInfo.edad,
-            motivoGroup: normalizedInfo.motivoGroup,
-            motivoGroupLabel: normalizedInfo.motivoGroupLabel,
-          };
-        }
-      }
-
-      const payload = {
-        memberId: appointment.memberId || null,
-        scheduledFor: toIsoDateTime(appointment.date, appointment.time),
-        seatNumber: appointment.seat || null,
-        motive: appointment.motivo || '',
-        notes: appointment.notas || '',
-        status: STATUS_TO_API[appointment.estado || 'Pendiente'] || 'SCHEDULED',
-        metadata: baseMetadata,
-      };
+      const payload = buildAppointmentPayload(appointment, service);
 
       const created = appointment.familyId
         ? await cenagemApi.createFamilyAppointment(appointment.familyId, payload)
@@ -234,6 +298,39 @@ export function useAgenda({ initialDate, preload = true, initialService = DEFAUL
       const mapped = mapAppointmentFromApi(created);
       setAgenda((prev) => [...prev, mapped]);
       return mapped;
+    },
+    [service],
+  );
+
+  const updateAppointmentDetails = useCallback(
+    async (appointment) => {
+      if (!appointment?.id) {
+        throw new Error('No se puede actualizar un turno sin ID');
+      }
+      const payload = buildAppointmentPayload(appointment, service);
+      const updated = await cenagemApi.updateAppointment(appointment.id, payload);
+      if (updated) {
+        const mapped = mapAppointmentFromApi(updated);
+        setAgenda((prev) =>
+          prev.map((item) =>
+            item.id === mapped.id
+              ? mapped
+              : item,
+          ),
+        );
+        return mapped;
+      }
+      setAgenda((prev) =>
+        prev.map((item) => {
+          if (item.id !== appointment.id) return item;
+          return {
+            ...item,
+            ...appointment,
+            metadata: payload.metadata,
+          };
+        }),
+      );
+      return null;
     },
     [service],
   );
@@ -316,6 +413,7 @@ export function useAgenda({ initialDate, preload = true, initialService = DEFAUL
     setAgenda,
     setService: updateService,
     addAppointment,
+    updateAppointment: updateAppointmentDetails,
     updateAppointmentStatus,
     removeAppointment,
     markFamilyAppointmentsAsAttended,

@@ -175,6 +175,7 @@ const mapMember = (member) => {
     notas: notesArray,
     os: member.metadata?.os || member.os || '',
     estado: member.metadata?.estado || '',
+    pedigree: member.pedigree || {},
   };
 };
 

@@ -1,0 +1,20 @@
+[Unit]
+Description=CENAGEM Backend (NestJS)
+After=network.target
+Requires=network-online.target
+
+[Service]
+Type=simple
+User=cenagem
+Group=cenagem
+WorkingDirectory=/opt/cenagem/app/cenagem-backend
+EnvironmentFile=/opt/cenagem/.env
+ExecStart=/usr/bin/npm run start:prod
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

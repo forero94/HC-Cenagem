@@ -14,6 +14,7 @@ import {
   getScheduleForWeekday,
   validateServiceDateConstraints,
   normalizeFamilyCodeInput,
+  normalizeMotivoGroupId,
   normalizePrimeraConsultaInfo,
 } from '@/modules/home/agenda';
 import { MOTIVO_CONSULTA_GROUPS } from '@/lib/motivosConsulta.js';
@@ -176,6 +177,41 @@ const createInitialServiceForms = () => ({
   laboratorio: createLaboratorioData(),
 });
 
+function getAppointmentBackgroundColor(item, primeraInfo) {
+  const isPrimeraConsulta = Boolean(item.primeraConsulta);
+  const motivoGroup = primeraInfo?.motivoGroup;
+  const motivo = (item.motivo || '').toLowerCase();
+
+  let motiveId = '';
+  if (isPrimeraConsulta && motivoGroup) {
+    motiveId = motivoGroup;
+  } else if (motivo) {
+    if (motivo.includes('prenatal')) motiveId = 'hallazgos-prenatales';
+    else if (motivo.includes('malformaci')) motiveId = 'malformaciones';
+    else if (motivo.includes('retraso')) motiveId = 'retraso-desarrollo';
+    else if (motivo.includes('cáncer') || motivo.includes('oncol')) motiveId = 'cancer-familiar';
+    else if (motivo.includes('reproductivo')) motiveId = 'problemas-reproductivos';
+    else if (motivo.includes('antecedentes')) motiveId = 'antecedentes-familiares';
+  }
+
+  switch (motiveId) {
+    case 'hallazgos-prenatales':
+      return 'bg-pink-200';
+    case 'malformaciones':
+      return 'bg-sky-200';
+    case 'retraso-desarrollo':
+      return 'bg-amber-200';
+    case 'cancer-familiar':
+      return 'bg-purple-200';
+    case 'problemas-reproductivos':
+      return 'bg-indigo-200';
+    case 'antecedentes-familiares':
+      return 'bg-green-200';
+    default:
+      return 'bg-white';
+  }
+}
+
 function FieldError({ message }) {
   if (!message) return null;
   return <span className="text-[11px] text-rose-600">{message}</span>;
@@ -303,35 +339,6 @@ function ClinicPatientFields({
             </select>
             <FieldError message={errors.confirmacionAsistencia} />
           </label>
-          <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-            Médico que atendió
-            <select
-              value={data.medicoAtendio || ''}
-              onChange={(e) => {
-                const value = e.target.value;
-                onChange({
-                  medicoAtendio: value,
-                  medicoAtendioOtro: value === 'otros' ? data.medicoAtendioOtro : '',
-                });
-              }}
-              className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-            >
-              {MEDICO_ATENDIO_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            {data.medicoAtendio === 'otros' && (
-              <input
-                type="text"
-                value={data.medicoAtendioOtro || ''}
-                onChange={(e) => onChange({ medicoAtendioOtro: e.target.value })}
-                className="mt-1 px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                placeholder="Nombre del profesional"
-              />
-            )}
-          </label>
         </div>
         {showEmbarazada && (
           <div className="flex flex-col gap-2">
@@ -377,11 +384,32 @@ function AgendaForm({
   overbook = false,
   service = 'clinica',
   onEnsureFamilyDetail,
+  editingAppointment = null,
 }) {
   const slotsForSelectedDate = useMemo(() => {
     if (!defaultDate) return availableSlots;
     return availableSlots.filter((slot) => slot.date === defaultDate);
   }, [availableSlots, defaultDate]);
+  const isEditing = Boolean(editingAppointment);
+  const editingSummary = useMemo(() => {
+    if (!editingAppointment) return '';
+    const friendly = editingAppointment.date ? formatFriendlyDate(editingAppointment.date) : '';
+    const timeLabel = editingAppointment.time ? `${editingAppointment.time} hs` : '';
+    return [friendly, timeLabel].filter(Boolean).join(' · ');
+  }, [editingAppointment]);
+  const editingPatientLabel = useMemo(() => {
+    if (!editingAppointment) return '';
+    if (editingAppointment.primeraConsulta) {
+      const info = normalizePrimeraConsultaInfo(
+        editingAppointment.primeraConsultaInfo
+          || (editingAppointment.metadata && editingAppointment.metadata.primeraConsultaInfo)
+          || null,
+      );
+      return [info?.nombre, info?.apellido].filter(Boolean).join(' ').trim();
+    }
+    const member = membersOptions.find((opt) => opt.id === editingAppointment.memberId);
+    return getMemberDisplayName(member) || '';
+  }, [editingAppointment, membersOptions]);
   const [memberId, setMemberId] = useState(membersOptions[0]?.id || '');
   const [date, setDate] = useState(defaultDate || '');
   const [time, setTime] = useState('');
@@ -392,14 +420,12 @@ function AgendaForm({
   const [familyCodeLookup, setFamilyCodeLookup] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [isPrimeraConsulta, setIsPrimeraConsulta] = useState(false);
-  const [primeraNombre, setPrimeraNombre] = useState('');
-  const [primeraApellido, setPrimeraApellido] = useState('');
-  const [primeraEdad, setPrimeraEdad] = useState('');
   const [primeraMotivoGroup, setPrimeraMotivoGroup] = useState('');
   const [primeraErrors, setPrimeraErrors] = useState({});
   const [formError, setFormError] = useState('');
   const normalizedService =
     (typeof service === 'string' && service.trim().toLowerCase()) || 'clinica';
+  const prevIsPrimeraConsultaRef = useRef(isPrimeraConsulta);
   const [serviceForms, setServiceForms] = useState(() => createInitialServiceForms());
   const [serviceErrors, setServiceErrors] = useState({});
   const lastLinkedMemberIdRef = useRef('');
@@ -523,6 +549,77 @@ function AgendaForm({
     });
   }, [getOptionFamilyId, matchedFamily, membersOptions, onEnsureFamilyDetail]);
 
+  useEffect(() => {
+    if (!editingAppointment) return;
+    setFormError('');
+    setSelectedSlotId('');
+    const nextDate = editingAppointment.date || defaultDate || '';
+    setDate(nextDate);
+    setTime(editingAppointment.time || '');
+    setNotas(editingAppointment.notas || '');
+    setMotivo(
+      editingAppointment.primeraConsulta ? 'Primera consulta' : editingAppointment.motivo || 'Consulta de seguimiento',
+    );
+    setMotivoPersonalizado(true);
+    setIsPrimeraConsulta(Boolean(editingAppointment.primeraConsulta));
+    setPrimeraErrors({});
+    if (editingAppointment.primeraConsulta) {
+      const primeraInfo = normalizePrimeraConsultaInfo(
+        editingAppointment.primeraConsultaInfo
+          || (editingAppointment.metadata && editingAppointment.metadata.primeraConsultaInfo)
+          || null,
+      );
+      const storedMotivoGroup =
+        editingAppointment.primeraMotivoGroup
+        || editingAppointment.serviceDetails?.data?.primeraMotivoGroup
+        || editingAppointment.metadata?.primeraMotivoGroup
+        || '';
+      const storedMotivoGroupLabel =
+        primeraInfo?.motivoGroupLabel
+        || editingAppointment.primeraMotivoGroupLabel
+        || editingAppointment.serviceDetails?.data?.primeraMotivoGroupLabel
+        || editingAppointment.metadata?.primeraMotivoGroupLabel
+        || '';
+      const resolvedMotivoGroupId = normalizeMotivoGroupId(
+        primeraInfo?.motivoGroup || storedMotivoGroup || storedMotivoGroupLabel,
+      );
+      setPrimeraMotivoGroup(resolvedMotivoGroupId);
+      setFamilyCodeInput('');
+      setFamilyCodeLookup('');
+    } else {
+      const familyCode =
+        editingAppointment.familyId && familiesById[editingAppointment.familyId]
+          ? familiesById[editingAppointment.familyId].code
+          : '';
+      if (familyCode) {
+        const upper = familyCode.toUpperCase();
+        setFamilyCodeInput(upper);
+        setFamilyCodeLookup(upper);
+      } else {
+        setFamilyCodeInput('');
+        setFamilyCodeLookup('');
+      }
+      if (editingAppointment.memberId) {
+        setMemberId(editingAppointment.memberId);
+      }
+    }
+    const serviceDataFromAppointment =
+      (editingAppointment.serviceDetails && editingAppointment.serviceDetails.data)
+      || editingAppointment.serviceDetails
+      || (editingAppointment.metadata && editingAppointment.metadata.serviceDetails)
+      || null;
+    if (serviceDataFromAppointment) {
+      setServiceForms((prev) => ({
+        ...prev,
+        [normalizedService]: {
+          ...(createInitialServiceForms()[normalizedService] || {}),
+          ...serviceDataFromAppointment,
+        },
+      }));
+    }
+    setServiceErrors({});
+  }, [editingAppointment, familiesById, normalizedService, defaultDate]);
+
   const selectedMember = useMemo(() => {
     if (!memberId) return null;
     return filteredMemberOptions.find((opt) => opt.id === memberId) || null;
@@ -595,35 +692,6 @@ function AgendaForm({
       };
     });
   }, [normalizedService, normalizedFamilyCode, familyCodeInput]);
-
-  useEffect(() => {
-    if (!isPrimeraConsulta) return;
-    const nombre = primeraNombre.trim();
-    const apellido = primeraApellido.trim();
-    const edad = primeraEdad.trim();
-    setServiceForms((prev) => {
-      const current = prev[normalizedService] || {};
-      let changed = false;
-      const next = { ...current };
-      if (nombre && current.pacienteNombre !== nombre) {
-        next.pacienteNombre = nombre;
-        changed = true;
-      }
-      if (apellido && current.pacienteApellido !== apellido) {
-        next.pacienteApellido = apellido;
-        changed = true;
-      }
-      if (edad && current.pacienteEdad !== edad) {
-        next.pacienteEdad = edad;
-        changed = true;
-      }
-      if (!changed) return prev;
-      return {
-        ...prev,
-        [normalizedService]: next,
-      };
-    });
-  }, [isPrimeraConsulta, normalizedService, primeraNombre, primeraApellido, primeraEdad]);
 
   useEffect(() => {
     if (isPrimeraConsulta) {
@@ -909,13 +977,11 @@ function AgendaForm({
   }, [memberId, filteredMemberOptions, motivoPersonalizado, isPrimeraConsulta]);
 
   useEffect(() => {
-    if (!isPrimeraConsulta) {
-      setPrimeraNombre('');
-      setPrimeraApellido('');
-      setPrimeraEdad('');
+    if (!isPrimeraConsulta && prevIsPrimeraConsultaRef.current) {
       setPrimeraMotivoGroup('');
       setPrimeraErrors({});
     }
+    prevIsPrimeraConsultaRef.current = isPrimeraConsulta;
   }, [isPrimeraConsulta]);
 
   useEffect(() => {
@@ -1007,6 +1073,21 @@ function AgendaForm({
     let latestServiceErrors = {};
     if (isPrimeraConsulta) {
       latestServiceErrors = validateServiceData(normalizedService, serviceData);
+      const nombre = primeraPacienteNombre;
+      const apellido = primeraPacienteApellido;
+      const edadRaw = primeraPacienteEdad;
+      const edadNumber = Number(edadRaw);
+      if (!nombre) {
+        latestServiceErrors.pacienteNombre = 'Ingresá el nombre del paciente';
+      }
+      if (!apellido) {
+        latestServiceErrors.pacienteApellido = 'Ingresá el apellido del paciente';
+      }
+      if (!edadRaw) {
+        latestServiceErrors[primeraEdadFieldKey] = 'Indicá la edad en años';
+      } else if (!Number.isFinite(edadNumber) || edadNumber <= 0) {
+        latestServiceErrors[primeraEdadFieldKey] = 'Ingresá una edad válida';
+      }
       if (Object.keys(latestServiceErrors).length > 0) {
         setServiceErrors(latestServiceErrors);
         return;
@@ -1028,23 +1109,9 @@ function AgendaForm({
     }
 
     let primeraConsultaInfo = null;
+    let primeraMotivoGroupLabelValue = '';
     if (isPrimeraConsulta) {
       const nextErrors = {};
-      const nombre = primeraNombre.trim();
-      const apellido = primeraApellido.trim();
-      const edadRaw = primeraEdad.trim();
-      const edadNumber = Number(edadRaw);
-      if (!nombre) {
-        nextErrors.primeraNombre = 'Ingresá el nombre del paciente';
-      }
-      if (!apellido) {
-        nextErrors.primeraApellido = 'Ingresá el apellido del paciente';
-      }
-      if (!edadRaw) {
-        nextErrors.primeraEdad = 'Indicá la edad en años';
-      } else if (!Number.isFinite(edadNumber) || edadNumber <= 0) {
-        nextErrors.primeraEdad = 'Ingresá una edad válida';
-      }
       if (!primeraMotivoGroup) {
         nextErrors.primeraMotivoGroup = 'Seleccioná un grupo principal';
       }
@@ -1053,12 +1120,14 @@ function AgendaForm({
         return;
       }
       setPrimeraErrors({});
+      const edadNumber = Number(primeraPacienteEdad);
+      primeraMotivoGroupLabelValue = getMotivoGroupLabel(primeraMotivoGroup);
       primeraConsultaInfo = {
-        nombre,
-        apellido,
-        edad: Math.round(edadNumber),
+        nombre: primeraPacienteNombre,
+        apellido: primeraPacienteApellido,
+        edad: Number.isFinite(edadNumber) ? Math.round(edadNumber) : null,
         motivoGroup: primeraMotivoGroup,
-        motivoGroupLabel: getMotivoGroupLabel(primeraMotivoGroup),
+        motivoGroupLabel: primeraMotivoGroupLabelValue,
       };
     }
 
@@ -1069,6 +1138,10 @@ function AgendaForm({
       diagnosticoMotivo: finalMotivo,
       observaciones,
     };
+    if (isPrimeraConsulta) {
+      servicePayload.primeraMotivoGroup = primeraMotivoGroup;
+      servicePayload.primeraMotivoGroupLabel = getMotivoGroupLabel(primeraMotivoGroup);
+    }
     if (!trimValue(servicePayload.pacienteAg)) {
       const agSource = normalizedFamilyCode || familyCodeInput || '';
       if (agSource) {
@@ -1087,11 +1160,14 @@ function AgendaForm({
       primeraConsulta: isPrimeraConsulta,
       sobreturno: overbook,
       primeraConsultaInfo,
+      primeraMotivoGroup: isPrimeraConsulta ? primeraMotivoGroup : null,
+      primeraMotivoGroupLabel: isPrimeraConsulta ? primeraMotivoGroupLabelValue : '',
       serviceDetails: {
         service: normalizedService,
         serviceLabel,
         data: servicePayload,
       },
+      appointmentId: editingAppointment?.id,
     });
 
     setDate(defaultDate || '');
@@ -1109,8 +1185,26 @@ function AgendaForm({
   };
 
   const hasMembers = filteredMemberOptions.length > 0;
+  const hasPacienteEdadField = Object.prototype.hasOwnProperty.call(
+    serviceData,
+    'pacienteEdad',
+  );
+  const hasEdadMaternaField = Object.prototype.hasOwnProperty.call(
+    serviceData,
+    'edadMaterna',
+  );
+  const primeraEdadFieldKey = hasPacienteEdadField ? 'pacienteEdad' : hasEdadMaternaField ? 'edadMaterna' : 'pacienteEdad';
+  const primeraEdadSourceValue = hasPacienteEdadField
+    ? serviceData.pacienteEdad
+    : hasEdadMaternaField
+      ? serviceData.edadMaterna
+      : serviceData.pacienteEdad;
+  const primeraPacienteNombre = normalizeStringValue(serviceData.pacienteNombre);
+  const primeraPacienteApellido = normalizeStringValue(serviceData.pacienteApellido);
+  const primeraPacienteEdad = normalizeStringValue(primeraEdadSourceValue);
+
   const primeraConsultaReady = !isPrimeraConsulta
-    || (primeraNombre.trim() && primeraApellido.trim() && primeraEdad.trim() && primeraMotivoGroup);
+    || (primeraPacienteNombre && primeraPacienteApellido && primeraPacienteEdad && primeraMotivoGroup);
   const canSubmit = Boolean(
     selectedSlotId
       && date
@@ -1118,6 +1212,8 @@ function AgendaForm({
       && (isPrimeraConsulta || hasMembers)
       && primeraConsultaReady,
   );
+  const submitLabel = isEditing ? 'Guardar cambios' : 'Guardar turno';
+  const cancelLabel = isEditing ? 'Cancelar reprogramación' : 'Cancelar';
   const trimmedFamilyCodeInput = familyCodeInput.trim();
   const trimmedFamilyCodeLookup = familyCodeLookup.trim();
   const hasPendingFamilyCode =
@@ -1142,6 +1238,16 @@ function AgendaForm({
       {formError && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {formError}
+        </div>
+      )}
+      {isEditing && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 flex flex-col gap-1">
+          <div className="text-sm font-semibold text-amber-900">Reprogramación en curso</div>
+          <p>
+            {editingPatientLabel ? `${editingPatientLabel} · ` : ''}
+            {editingSummary ? `Turno original: ${editingSummary}. ` : 'Revisá los datos existentes. '}
+            Elegí un nuevo horario y guardá los cambios para actualizar la agenda.
+          </p>
         </div>
       )}
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
@@ -1265,53 +1371,14 @@ function AgendaForm({
         </label>
       </div>
       {isPrimeraConsulta && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <label className="required flex flex-col gap-2 text-xs uppercase tracking-wide text-slate-500">
-            Nombre del paciente
-            <span className="text-[11px] text-slate-500">Ingresá el nombre que figura en el documento</span>
-            <input
-              type="text"
-              value={primeraNombre}
-              onChange={(e) => setPrimeraNombre(e.target.value)}
-              placeholder="Ej. Carolina"
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 transition focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-              autoComplete="off"
-            />
-            {primeraErrors.primeraNombre && (
-              <span className="text-[11px] text-rose-600">{primeraErrors.primeraNombre}</span>
-            )}
-          </label>
-          <label className="required flex flex-col gap-2 text-xs uppercase tracking-wide text-slate-500">
-            Apellido del paciente
-            <span className="text-[11px] text-slate-500">Para identificar a la familia en la recepción</span>
-            <input
-              type="text"
-              value={primeraApellido}
-              onChange={(e) => setPrimeraApellido(e.target.value)}
-              placeholder="Ej. Martínez"
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 transition focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-              autoComplete="off"
-            />
-            {primeraErrors.primeraApellido && (
-              <span className="text-[11px] text-rose-600">{primeraErrors.primeraApellido}</span>
-            )}
-          </label>
-          <label className="required flex flex-col gap-2 text-xs uppercase tracking-wide text-slate-500">
-            Edad
-            <span className="text-[11px] text-slate-500">Edad aproximada en años de la persona que consulta</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={primeraEdad}
-              onChange={(e) => setPrimeraEdad(e.target.value)}
-              placeholder="Ej. 8"
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 transition focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-            />
-            {primeraErrors.primeraEdad && (
-              <span className="text-[11px] text-rose-600">{primeraErrors.primeraEdad}</span>
-            )}
-          </label>
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">
+            Datos adicionales · Primera consulta
+          </div>
+          <p className="text-[12px] text-slate-600">
+            Completá nombre, apellido, edad y datos de contacto en la sección <strong>Datos del paciente</strong>. Esa
+            información se usará para registrar la primera consulta.
+          </p>
           <label className="required flex flex-col gap-2 text-xs uppercase tracking-wide text-slate-500">
             Motivo principal (grupo)
             <span className="text-[11px] text-slate-500">Elegí el grupo que mejor describe el motivo de derivación</span>
@@ -1382,7 +1449,7 @@ function AgendaForm({
           className="rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!canSubmit}
         >
-          Guardar turno
+          {submitLabel}
         </button>
         <button
           type="button"
@@ -1397,7 +1464,7 @@ function AgendaForm({
           }}
           className="rounded-2xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
         >
-          Cancelar
+          {cancelLabel}
         </button>
       </div>
     </form>
@@ -1412,7 +1479,10 @@ function AgendaList({
   onRemove,
   onOpenFamily,
   onCreateFamilyCase,
+  onRescheduleAppointment,
 }) {
+  const [confirmingAction, setConfirmingAction] = useState(null);
+
   if (!items.length) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
@@ -1464,6 +1534,8 @@ function AgendaList({
     const summaryText = [codeLabel, displayName, motivoLabel].filter(Boolean).join(' · ');
     const statusColor = getStatusBadgeColor(item.estado);
 
+    const backgroundColorClass = getAppointmentBackgroundColor(item, primeraInfo);
+
     const actionButtons = [];
     if (family && (!isPrimeraConsulta || !wizardPending)) {
       actionButtons.push(
@@ -1505,10 +1577,15 @@ function AgendaList({
       <button
         key="remove"
         type="button"
-        onClick={() => onRemove(item.id)}
+        onClick={() =>
+          setConfirmingAction({
+            item,
+            summaryText,
+          })
+        }
         className="text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors"
       >
-        Eliminar
+        Cancelar
       </button>,
     );
 
@@ -1544,7 +1621,7 @@ function AgendaList({
     }
 
     return (
-      <div key={item.id} className="px-4 py-3 text-sm">
+      <div key={item.id} className={`px-4 py-3 text-sm ${backgroundColorClass}`}>
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-xs font-semibold text-slate-500">
             {item.time ? `${item.time} hs` : 'Sin horario'}
@@ -1582,34 +1659,107 @@ function AgendaList({
     );
   };
 
+  const handleCloseConfirmation = () => setConfirmingAction(null);
+  const hasRescheduleHandler = typeof onRescheduleAppointment === 'function';
+
+  const handleConfirmCancel = () => {
+    if (!confirmingAction?.item) return;
+    const result = onRemove(confirmingAction.item.id);
+    if (result && typeof result.then === 'function') {
+      result.finally(() => setConfirmingAction(null));
+    } else {
+      setConfirmingAction(null);
+    }
+  };
+
+  const handleReschedule = () => {
+    if (!confirmingAction?.item) return;
+    if (hasRescheduleHandler) {
+      const result = onRescheduleAppointment(confirmingAction.item);
+      if (result && typeof result.then === 'function') {
+        result.finally(() => setConfirmingAction(null));
+        return;
+      }
+    }
+    setConfirmingAction(null);
+  };
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-      {firstTimeItems.length > 0 && (
-        <div>
-          {showGroupedSections && (
-            <div className="bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Consultas de primera vez
+    <>
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+        {firstTimeItems.length > 0 && (
+          <div>
+            {showGroupedSections && (
+              <div className="bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Consultas de primera vez
+              </div>
+            )}
+            <div className="divide-y divide-slate-100">
+              {firstTimeItems.map((item) => renderItem(item))}
             </div>
-          )}
-          <div className="divide-y divide-slate-100">
-            {firstTimeItems.map((item) => renderItem(item))}
+          </div>
+        )}
+        {showGroupedSections && <div className="border-t border-dashed border-slate-200" />}
+        {followUpItems.length > 0 && (
+          <div>
+            {showGroupedSections && (
+              <div className="bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Consultas programadas
+              </div>
+            )}
+            <div className="divide-y divide-slate-100">
+              {followUpItems.map((item) => renderItem(item))}
+            </div>
+          </div>
+        )}
+      </div>
+      {confirmingAction && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 px-4 py-8">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Confirmar acción
+              </div>
+              <div className="text-base font-semibold text-slate-900">
+                {confirmingAction.summaryText || 'Turno sin datos'}
+              </div>
+              <p className="text-sm text-slate-600">
+                Elegí qué querés hacer con este turno.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleConfirmCancel}
+                className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors"
+              >
+                Cancelar turno
+              </button>
+              <button
+                type="button"
+                onClick={handleReschedule}
+                className={`w-full rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${hasRescheduleHandler ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                disabled={!hasRescheduleHandler}
+              >
+                Reprogramar
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseConfirmation}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Volver
+              </button>
+            </div>
+            {!hasRescheduleHandler && (
+              <p className="text-[11px] text-center text-slate-400">
+                La acción de reprogramar todavía no está disponible en este entorno.
+              </p>
+            )}
           </div>
         </div>
       )}
-      {showGroupedSections && <div className="border-t border-dashed border-slate-200" />}
-      {followUpItems.length > 0 && (
-        <div>
-          {showGroupedSections && (
-            <div className="bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Consultas programadas
-            </div>
-          )}
-          <div className="divide-y divide-slate-100">
-            {followUpItems.map((item) => renderItem(item))}
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -1819,52 +1969,21 @@ function PrenatalFields({ data, errors, onChange }) {
           />
           <FieldError message={errors.medicoDerivante} />
         </label>
-        <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-          Confirmación de asistencia *
-          <select
-            value={data.confirmacionAsistencia || 'pendiente'}
-            onChange={(e) => onChange({ confirmacionAsistencia: e.target.value })}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-          >
-            {CONFIRMACION_ASISTENCIA_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <FieldError message={errors.confirmacionAsistencia} />
-        </label>
-        <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
-          Médico que atendió *
-          <select
-            value={data.medicoAtendio || ''}
-            onChange={(e) => {
-              const value = e.target.value;
-              onChange({
-                medicoAtendio: value,
-                medicoAtendioOtro: value === 'otros' ? data.medicoAtendioOtro : '',
-              });
-            }}
-            className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-          >
-            {MEDICO_ATENDIO_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <FieldError message={errors.medicoAtendio} />
-          {data.medicoAtendio === 'otros' && (
-            <input
-              type="text"
-              value={data.medicoAtendioOtro || ''}
-              onChange={(e) => onChange({ medicoAtendioOtro: e.target.value })}
-              className="mt-1 px-3 py-2 rounded-xl border border-slate-300 text-sm"
-              placeholder="Nombre del profesional"
-            />
-          )}
-        </label>
-      </div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500 flex flex-col gap-1">
+                    Confirmación de asistencia *
+                    <select
+                      value={data.confirmacionAsistencia || 'pendiente'}
+                      onChange={(e) => onChange({ confirmacionAsistencia: e.target.value })}
+                      className="px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                    >
+                      {CONFIRMACION_ASISTENCIA_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <FieldError message={errors.confirmacionAsistencia} />
+                  </label>      </div>
     </div>
   );
 }
@@ -2304,6 +2423,7 @@ export default function TodayAgenda({
   onCreateAppointment,
   onStatusChange,
   onRemoveAppointment,
+  onUpdateAppointment,
   onOpenFamily,
   onCreateFamilyCase,
   availableSlots = [],
@@ -2313,12 +2433,29 @@ export default function TodayAgenda({
   const [adding, setAdding] = useState(false);
   const [overbookMode, setOverbookMode] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState(null);
   const isSelectedDateBlocked = useMemo(() => {
     return blockedDays.includes(selectedDate);
   }, [blockedDays, selectedDate]);
   const datePickerRef = useRef(null);
   const selectedService =
     (typeof service === 'string' && service.trim().toLowerCase()) || 'clinica';
+  const handleReprogramAppointment = useCallback(
+    (appointment) => {
+      if (!appointment) return;
+      if (
+        appointment.date
+        && appointment.date !== selectedDate
+        && typeof onDateChange === 'function'
+      ) {
+        onDateChange(appointment.date);
+      }
+      setEditingAppointment(appointment);
+      setOverbookMode(Boolean(appointment.sobreturno));
+      setAdding(true);
+    },
+    [onDateChange, selectedDate],
+  );
 
   const handleServiceSelect = useCallback(
     (event) => {
@@ -2390,22 +2527,25 @@ export default function TodayAgenda({
   const dayPickerModifiersStyles = useMemo(
     () => ({
       availableMany: {
-        backgroundColor: '#dcfce7',
-        color: '#166534',
-        fontWeight: 600,
+        backgroundColor: '#16a34a',
+        color: '#fff',
+        fontWeight: 700,
         borderRadius: '8px',
+        boxShadow: 'inset 0 0 0 1px #15803d',
       },
       availableFew: {
-        backgroundColor: '#fef3c7',
-        color: '#92400e',
-        fontWeight: 600,
+        backgroundColor: '#facc15',
+        color: '#422006',
+        fontWeight: 700,
         borderRadius: '8px',
+        boxShadow: 'inset 0 0 0 1px #d97706',
       },
       unavailable: {
-        backgroundColor: '#fee2e2',
-        color: '#b91c1c',
-        fontWeight: 600,
+        backgroundColor: '#dc2626',
+        color: '#fff',
+        fontWeight: 700,
         borderRadius: '8px',
+        boxShadow: 'inset 0 0 0 1px #991b1b',
       },
     }),
     [],
@@ -2413,7 +2553,7 @@ export default function TodayAgenda({
 
   const dayPickerStyles = useMemo(
     () => ({
-      day: { borderRadius: '8px' },
+      day: { borderRadius: '8px', color: '#0f172a', fontWeight: 600 },
       day_selected: { backgroundColor: '#0f172a', color: '#fff' },
       day_today: { backgroundColor: '#f0f9ff', border: '1px solid #0ea5e9' },
       head_cell: { textTransform: 'uppercase', fontSize: '11px', fontWeight: 600, color: '#64748b' },
@@ -2461,6 +2601,11 @@ export default function TodayAgenda({
     onDateChange(todayIso);
   };
 
+  const handleCloseForm = useCallback(() => {
+    setAdding(false);
+    setEditingAppointment(null);
+  }, []);
+
   useEffect(() => {
     if (!adding) return;
     const handler = (event) => {
@@ -2473,6 +2618,7 @@ export default function TodayAgenda({
   useEffect(() => {
     if (!adding) {
       setOverbookMode(false);
+      setEditingAppointment(null);
     }
   }, [adding]);
 
@@ -2500,6 +2646,7 @@ export default function TodayAgenda({
       setAdding(false);
       return;
     }
+    setEditingAppointment(null);
     setOverbookMode(false);
     setAdding(true);
   };
@@ -2512,6 +2659,7 @@ export default function TodayAgenda({
       setAdding(false);
       return;
     }
+    setEditingAppointment(null);
     setOverbookMode(true);
     setAdding(true);
   };
@@ -2609,22 +2757,32 @@ export default function TodayAgenda({
         </div>
       )}
       {adding && !isSelectedDateBlocked && (
-        <AgendaForm
-          membersOptions={membersOptions}
-          familiesById={familiesById}
-          defaultDate={selectedDate}
-          availableSlots={slotsForForm}
-          overbook={overbookMode}
-          service={selectedService}
-          onEnsureFamilyDetail={onEnsureFamilyDetail}
-          onSubmit={(values) => {
-            if (typeof onCreateAppointment === 'function') {
-              onCreateAppointment({ ...values, service: selectedService });
-            }
-            setAdding(false);
-          }}
-          onCancel={() => setAdding(false)}
-        />
+      <AgendaForm
+        membersOptions={membersOptions}
+        familiesById={familiesById}
+        defaultDate={selectedDate}
+        availableSlots={slotsForForm}
+        overbook={overbookMode}
+        service={selectedService}
+        onEnsureFamilyDetail={onEnsureFamilyDetail}
+        editingAppointment={editingAppointment}
+        onSubmit={(values) => {
+          const payload = { ...values, service: selectedService };
+          if (editingAppointment && typeof onUpdateAppointment === 'function') {
+            onUpdateAppointment({
+              ...editingAppointment,
+              ...payload,
+              metadata: editingAppointment.metadata,
+              id: editingAppointment.id,
+              estado: editingAppointment.estado || 'Pendiente',
+            });
+          } else if (typeof onCreateAppointment === 'function') {
+            onCreateAppointment(payload);
+          }
+          handleCloseForm();
+        }}
+        onCancel={handleCloseForm}
+      />
       )}
       <AgendaList
         items={appointments}
@@ -2634,6 +2792,7 @@ export default function TodayAgenda({
         onRemove={onRemoveAppointment}
         onOpenFamily={onOpenFamily}
         onCreateFamilyCase={onCreateFamilyCase}
+        onRescheduleAppointment={handleReprogramAppointment}
       />
     </div>
   );

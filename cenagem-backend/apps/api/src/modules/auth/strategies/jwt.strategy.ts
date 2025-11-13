@@ -16,11 +16,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
   ) {
+    const accessSecret = configService.get<string>('auth.access.secret');
+
+    if (!accessSecret) {
+      throw new Error(
+        'Missing auth.access.secret. Configure JWT_ACCESS_SECRET via your KeyVault/KMS workflow.',
+      );
+    }
+
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey:
-        configService.get<string>('auth.access.secret') ?? 'change-me-access',
+      secretOrKey: accessSecret,
     });
   }
 

@@ -3,10 +3,10 @@
 // ===============================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCenagemStore } from '@/store/cenagemStore';
+import AddMemberModal from './AddMemberModal.jsx';
+import EditMemberForm from './EditMemberForm.jsx';
 
-const DEFAULT_OS = '—';
 const DEFAULT_SEX = 'U';
-const INITIAL_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 const yearsSince = (iso) => {
   if (!iso) return '—';
@@ -18,32 +18,6 @@ const yearsSince = (iso) => {
   if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < date.getDate())) years -= 1;
   return `${years}a`;
 };
-
-const pickInitials = (members) => {
-  const taken = new Set(
-    members
-      .map((member) => member.filiatorios?.iniciales || member.rol || '')
-      .filter(Boolean)
-      .map((value) => value.toUpperCase()),
-  );
-  for (const letter of INITIAL_LETTERS) {
-    const candidate = `${letter}1`;
-    if (!taken.has(candidate)) return candidate;
-  }
-  return `N${members.length + 1}`;
-};
-
-const buildNewMemberPayload = (family, members) => ({
-  familyId: family.id,
-  rol: '',
-  filiatorios: { iniciales: pickInitials(members) },
-  nombre: '',
-  sexo: DEFAULT_SEX,
-  nacimiento: '',
-  estado: 'vivo',
-  os: DEFAULT_OS,
-  notas: [],
-});
 
 function useMembersManager(familyId) {
   const {
@@ -114,6 +88,9 @@ export default function MembersPage({ familyId, inline = false }) {
 
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     if (!members.length) {
@@ -121,12 +98,14 @@ export default function MembersPage({ familyId, inline = false }) {
       return;
     }
     if (!selectedId) {
-      setSelectedId(members[0].id);
+      const probando = members.find(m => m.role === 'Probando');
+      setSelectedId(probando ? probando.id : members[0].id);
       return;
     }
     if (!members.some((member) => member.id === selectedId)) {
       setSelectedId(members[0].id);
     }
+    setIsEditing(null); // Close edit form when changing member
   }, [members, selectedId]);
 
   const filteredMembers = useMemo(() => {
@@ -134,12 +113,13 @@ export default function MembersPage({ familyId, inline = false }) {
     if (!keyword) return members;
     return members.filter((member) => {
       const haystack = [
-        member.nombre,
+        member.givenName,
+        member.lastName,
         member.filiatorios?.iniciales,
-        member.rol,
-        member.sexo,
+        member.role,
+        member.sex,
         member.os,
-        member.estado,
+        member.diagnosis,
       ]
         .filter(Boolean)
         .join(' ')
@@ -153,24 +133,30 @@ export default function MembersPage({ familyId, inline = false }) {
     [members, selectedId],
   );
 
-  const handleCreateMember = useCallback(async () => {
+  const handleAddMember = useCallback(async (payload) => {
     if (!family) return;
     try {
-      const created = await createMember(buildNewMemberPayload(family, members));
+      const created = await createMember(payload);
       if (created?.id) {
         setSelectedId(created.id);
       }
     } catch (error) {
       console.error('No se pudo crear el miembro', error);
+      // Optionally, show an error to the user
     }
-  }, [createMember, family, members]);
+  }, [createMember, family]);
+
 
   const handleUpdateMember = useCallback(
     async (memberId, patch) => {
+      setIsUpdating(true);
       try {
         await updateMember(memberId, patch);
+        setIsEditing(null); // Close form on success
       } catch (error) {
         console.error('No se pudo actualizar el miembro', error);
+      } finally {
+        setIsUpdating(false);
       }
     },
     [updateMember],
@@ -219,6 +205,14 @@ export default function MembersPage({ familyId, inline = false }) {
 
   return (
     <div className={inline ? '' : 'app-shell p-6 grid gap-4'}>
+      {isModalOpen && (
+        <AddMemberModal
+          family={family}
+          onAdd={handleAddMember}
+          onClose={() => setIsModalOpen(false)}
+        />
+      )}
+
       {!inline && (
         <div className="mb-3 flex items-center justify-between text-white">
           <button
@@ -245,21 +239,21 @@ export default function MembersPage({ familyId, inline = false }) {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">Miembros registrados</div>
-              <div className="text-xs text-slate-500">Seleccioná un miembro para editar su información.</div>
+              <div className="text-xs text-slate-500">Pacientes de la familia bajo seguimiento.</div>
             </div>
             <button
               type="button"
-              className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50"
-              onClick={handleCreateMember}
+              className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm flex items-center gap-2"
+              onClick={() => setIsModalOpen(true)}
             >
-              ➕ Agregar
+              ➕ Agregar Paciente
             </button>
           </div>
 
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por nombre, iniciales, OS..."
+            placeholder="Buscar por nombre, rol, DNI..."
             className="mb-3 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
           />
 
@@ -283,13 +277,13 @@ export default function MembersPage({ familyId, inline = false }) {
                   className={buttonClass}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="text-sm">
-                      <b>{member.filiatorios?.iniciales || member.rol || '—'}</b> · {member.nombre || '—'}
+                    <div className="text-sm font-medium">
+                      {member.givenName || 'Miembro'} {member.lastName}
                     </div>
-                    <span className="text-xs opacity-80">{member.estado || '—'}</span>
+                    <span className="text-xs opacity-80">{member.role || '—'}</span>
                   </div>
                   <div className="text-xs text-slate-600">
-                    {yearsSince(member.nacimiento)} · OS: {member.os || DEFAULT_OS}
+                    {yearsSince(member.birthDate)} · DNI: {member.filiatorios?.dni || 'N/A'}
                   </div>
                 </button>
               );
@@ -300,156 +294,86 @@ export default function MembersPage({ familyId, inline = false }) {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           {!activeMember ? (
             <div className="text-sm text-slate-500">Seleccioná un integrante para editar su registro.</div>
+          ) : isEditing === activeMember.id ? (
+            <EditMemberForm
+              member={activeMember}
+              onUpdate={handleUpdateMember}
+              onCancel={() => setIsEditing(null)}
+              isUpdating={isUpdating}
+            />
           ) : (
             <div className="grid gap-3">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-sm font-semibold">{activeMember.nombre || 'Miembro sin nombre'}</div>
+                  <div className="text-sm font-semibold">{activeMember.givenName || 'Miembro sin nombre'} {activeMember.lastName}</div>
                   <div className="text-xs text-slate-500">
-                    HC {family.code} · {activeMember.filiatorios?.iniciales || activeMember.rol || 'Rol sin definir'}
+                    HC {family.code} · {activeMember.role || 'Rol sin definir'}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50"
-                  onClick={() => handleDeleteMember(activeMember.id)}
-                >
-                  🗑 Eliminar
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50"
+                    onClick={() => setIsEditing(activeMember.id)}
+                  >
+                    ✏️ Editar
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50"
+                    onClick={() => handleDeleteMember(activeMember.id)}
+                  >
+                    🗑 Eliminar
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs text-slate-600">Iniciales</label>
-                  <input
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={activeMember.filiatorios?.iniciales || ''}
-                    onChange={(event) =>
-                      void handleUpdateMember(activeMember.id, {
-                        filiatorios: {
-                          ...(activeMember.filiatorios || {}),
-                          iniciales: event.target.value,
-                        },
-                      })}
-                  />
+                  <label className="mb-1 block text-xs text-slate-600">Nombre</label>
+                  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">{activeMember.givenName || '—'}</div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-600">Nombre completo</label>
-                  <input
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={activeMember.nombre || ''}
-                    onChange={(event) => void handleUpdateMember(activeMember.id, { nombre: event.target.value })}
-                  />
+                  <label className="mb-1 block text-xs text-slate-600">Apellido</label>
+                  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">{activeMember.lastName || '—'}</div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs text-slate-600">Sexo</label>
-                  <select
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={activeMember.sexo || DEFAULT_SEX}
-                    onChange={(event) => void handleUpdateMember(activeMember.id, { sexo: event.target.value })}
-                  >
-                    <option value="U">—</option>
-                    <option value="F">F</option>
-                    <option value="M">M</option>
-                  </select>
+                  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">{activeMember.sexo || '—'}</div>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-600">Rol</label>
-                  <input
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={activeMember.rol || ''}
-                    onChange={(event) => void handleUpdateMember(activeMember.id, { rol: event.target.value })}
-                  />
+                  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">{activeMember.role || '—'}</div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-600">Estado</label>
-                  <select
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={activeMember.estado || 'vivo'}
-                    onChange={(event) => void handleUpdateMember(activeMember.id, { estado: event.target.value })}
-                  >
-                    <option value="vivo">vivo</option>
-                    <option value="fallecido">fallecido</option>
-                  </select>
+                  <label className="mb-1 block text-xs text-slate-600">DNI</label>
+                  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">{activeMember.filiatorios?.dni || '—'}</div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs text-slate-600">Nacimiento (ISO)</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={activeMember.nacimiento ? activeMember.nacimiento.slice(0, 10) : ''}
-                    onChange={(event) =>
-                      void handleUpdateMember(activeMember.id, { nacimiento: event.target.value || '' })}
-                  />
+                  <label className="mb-1 block text-xs text-slate-600">Nacimiento</label>
+                  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">{activeMember.birthDate ? activeMember.birthDate.slice(0, 10) : '—'}</div>
                 </div>
-                <div className="md:col-span-2">
-                  <label className="mb-1 block text-xs text-slate-600">Obra social</label>
-                  <input
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={activeMember.os || DEFAULT_OS}
-                    onChange={(event) => void handleUpdateMember(activeMember.id, { os: event.target.value })}
-                  />
+                <div>
+                  <label className="mb-1 block text-xs text-slate-600">Diagnóstico principal</label>
+                  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">{activeMember.diagnosis || '—'}</div>
                 </div>
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-slate-600">Notas (JSON simple)</label>
-                <textarea
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs"
-                  rows={4}
-                  value={JSON.stringify(activeMember.notas || [], null, 2)}
-                  onChange={(event) => {
-                    try {
-                      const parsed = JSON.parse(event.target.value || '[]');
-                      if (Array.isArray(parsed)) {
-                        void handleUpdateMember(activeMember.id, { notas: parsed });
-                      }
-                    } catch {
-                      // Ignorar errores de parseo
-                    }
-                  }}
-                />
+                <label className="mb-1 block text-xs text-slate-600">Resumen / Notas Clínicas</label>
+                <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm min-h-[96px]">
+                  {activeMember.summary || '—'}
+                </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                <button
-                  type="button"
-                  className="rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-amber-900 hover:bg-amber-100"
-                  onClick={() => void handleUpdateMember(activeMember.id, { rol: 'Proband' })}
-                >
-                  Marcar Proband
-                </button>
-                <button
-                  type="button"
-                  className="rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-amber-900 hover:bg-amber-100"
-                  onClick={() => void handleUpdateMember(activeMember.id, { rol: 'M1' })}
-                >
-                  Marcar Madre (M1)
-                </button>
-                <button
-                  type="button"
-                  className="rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-amber-900 hover:bg-amber-100"
-                  onClick={() => void handleUpdateMember(activeMember.id, { rol: 'P1' })}
-                >
-                  Marcar Padre (P1)
-                </button>
-                <button
-                  type="button"
-                  className="rounded-xl border border-slate-300 px-3 py-2 hover:bg-slate-50"
-                  onClick={() => setSelectedId('')}
-                >
-                  Limpiar selección
-                </button>
-              </div>
-
+              
               <div className="text-[11px] text-slate-500">
-                Esta página administra <b>miembros</b> (identidad, demografía, rol).
+                Esta página administra <b>miembros</b> (identidad, demografía, rol). Las evoluciones y estudios se gestionan en sus respectivas pestañas.
               </div>
             </div>
           )}

@@ -13,7 +13,7 @@ import HomeHeader from '@/modules/home/components/HomeHeader.jsx';
 import MetricsBoard from '@/modules/home/components/MetricsBoard.jsx';
 import TodayAgenda from '@/modules/home/components/TodayAgenda.jsx';
 import WeeklyAgendaBoard from '@/modules/home/components/WeeklyAgendaBoard.jsx';
-import { normalizeFamilyCodeInput, formatFriendlyDate, formatISODateLocal } from '@/modules/home/agenda';
+import { normalizeFamilyCodeInput, formatFriendlyDate, formatISODateLocal, getMotivoGroupLabel } from '@/modules/home/agenda';
 import { useAgenda } from '@/modules/home/useAgenda';
 
 const uidLocal = () => Math.random().toString(36).slice(2, 10);
@@ -371,6 +371,7 @@ export default function HomePage({ user, onLogout }) {
     service,
     setSelectedDate,
     addAppointment,
+    updateAppointment: updateAppointmentRecord,
     updateAppointmentStatus,
     removeAppointment,
     markFamilyAppointmentsAsAttended,
@@ -661,6 +662,29 @@ export default function HomePage({ user, onLogout }) {
       await addAppointment(appointment);
     } catch (error) {
       console.error('No se pudo crear el turno', error);
+    }
+  };
+
+  const handleUpdateAppointment = async (payload) => {
+    if (!payload?.id) return;
+    const member = payload.memberId ? membersById[payload.memberId] : null;
+    const normalizedService = (payload.service || service || 'clinica').toLowerCase();
+    const appointment = {
+      ...payload,
+      service: normalizedService,
+      familyId: payload.primeraConsulta
+        ? payload.familyId || null
+        : member?.familyId || payload.familyId || null,
+      primeraMotivoGroup: payload.primeraMotivoGroup || payload.primeraConsultaInfo?.motivoGroup || null,
+      primeraMotivoGroupLabel:
+        payload.primeraMotivoGroupLabel
+        || payload.primeraConsultaInfo?.motivoGroupLabel
+        || (payload.primeraMotivoGroup ? getMotivoGroupLabel(payload.primeraMotivoGroup) : ''),
+    };
+    try {
+      await updateAppointmentRecord(appointment);
+    } catch (error) {
+      console.error('No se pudo reprogramar el turno', error);
     }
   };
 
@@ -1109,6 +1133,7 @@ export default function HomePage({ user, onLogout }) {
         membersById={membersById}
         familiesById={familiesById}
         onCreateAppointment={handleCreateAppointment}
+        onUpdateAppointment={handleUpdateAppointment}
         onStatusChange={handleStatusChange}
         onRemoveAppointment={handleRemoveAppointment}
         onOpenFamily={handleOpenFamily}

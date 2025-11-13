@@ -1,0 +1,40 @@
+version: "3.9"
+services:
+  backend:
+    image: node:20-slim
+    working_dir: /app
+    command: npm run start:prod
+    env_file:
+      - ../plantillas/.env.example
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../cenagem-backend:/app
+    depends_on:
+      - postgres
+
+  frontend-build:
+    image: node:20-slim
+    working_dir: /web
+    command: sh -c "npm ci && npm run build && npx serve dist"
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000/api/v1
+    ports:
+      - "5173:3000"
+    volumes:
+      - ../cenagem-registro:/web
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: cenagem
+      POSTGRES_USER: cenagem_app
+      POSTGRES_PASSWORD: change-me
+    ports:
+      - "5432:5432"
+    volumes:
+      - cenagem-data:/var/lib/postgresql/data
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/var/lib/postgresql/server.crt", "-c", "ssl_key_file=/var/lib/postgresql/server.key"]
+
+volumes:
+  cenagem-data:

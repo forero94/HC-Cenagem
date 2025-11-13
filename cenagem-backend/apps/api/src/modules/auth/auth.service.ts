@@ -395,10 +395,15 @@ export class AuthService {
   }
 
   private get refreshSecret(): string {
-    return (
-      this.configService.get<string>('auth.refresh.secret') ??
-      'change-me-refresh'
-    );
+    const secret = this.configService.get<string>('auth.refresh.secret');
+
+    if (!secret) {
+      throw new Error(
+        'Missing auth.refresh.secret. Set JWT_REFRESH_SECRET via KeyVault/KMS before running the API.',
+      );
+    }
+
+    return secret;
   }
 
   private decodeToken<T extends { exp?: number }>(token: string): T | null {

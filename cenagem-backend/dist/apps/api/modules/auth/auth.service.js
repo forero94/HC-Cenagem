@@ -326,8 +326,11 @@ let AuthService = class AuthService {
             '7d');
     }
     get refreshSecret() {
-        return (this.configService.get('auth.refresh.secret') ??
-            'change-me-refresh');
+        const secret = this.configService.get('auth.refresh.secret');
+        if (!secret) {
+            throw new Error('Missing auth.refresh.secret. Set JWT_REFRESH_SECRET via KeyVault/KMS before running the API.');
+        }
+        return secret;
     }
     decodeToken(token) {
         const decoded = this.jwtService.decode(token);

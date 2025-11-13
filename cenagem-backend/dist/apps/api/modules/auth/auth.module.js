@@ -32,9 +32,13 @@ exports.AuthModule = AuthModule = __decorate([
             jwt_1.JwtModule.registerAsync({
                 imports: [config_1.ConfigModule],
                 inject: [config_1.ConfigService],
-                useFactory: (config) => ({
-                    secret: config.get('auth.access.secret') ?? 'change-me-access',
-                }),
+                useFactory: (config) => {
+                    const secret = config.get('auth.access.secret');
+                    if (!secret) {
+                        throw new Error('Missing auth.access.secret. Set JWT_ACCESS_SECRET via KeyVault/KMS before starting the API.');
+                    }
+                    return { secret };
+                },
             }),
             database_1.PrismaModule,
             attachments_module_1.AttachmentsModule,

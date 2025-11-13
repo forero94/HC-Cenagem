@@ -9,7 +9,10 @@ export default function FamilyPage({ user = { email: 'genetista@cenagem.gob.ar' 
     loading: familiesLoading,
     ensureFamilyDetail,
     addEvolution,
+    createMember,
     updateMember,
+    deleteMember,
+    updateFamily,
   } = useCenagemStore();
 
   useEffect(() => {
@@ -65,6 +68,21 @@ export default function FamilyPage({ user = { email: 'genetista@cenagem.gob.ar' 
     [addEvolution, user],
   );
 
+  const handleCreateMember = useCallback(
+    (payload) => {
+      if (!familyId) {
+        return Promise.resolve(null);
+      }
+      return createMember(familyId, payload);
+    },
+    [createMember, familyId],
+  );
+
+  const handleDeleteMember = useCallback(
+    (memberId) => deleteMember(memberId),
+    [deleteMember],
+  );
+
   if (familiesLoading && !family) {
     return (
       <div className="p-6">
@@ -90,7 +108,10 @@ export default function FamilyPage({ user = { email: 'genetista@cenagem.gob.ar' 
         studies={studies}
         onBack={() => { window.location.hash = ''; }}
         onAddEvolution={handleAddEvolution}
+        onCreateMember={handleCreateMember}
         onUpdateMember={updateMember}
+        onDeleteMember={handleDeleteMember}
+        onUpdateFamily={updateFamily}
         initialTab="resumen"
       />
     </div>

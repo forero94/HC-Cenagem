@@ -20,10 +20,14 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
     configService;
     usersService;
     constructor(configService, usersService) {
+        const accessSecret = configService.get('auth.access.secret');
+        if (!accessSecret) {
+            throw new Error('Missing auth.access.secret. Configure JWT_ACCESS_SECRET via your KeyVault/KMS workflow.');
+        }
         super({
             jwtFromRequest: passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken(),
             ignoreExpiration: false,
-            secretOrKey: configService.get('auth.access.secret') ?? 'change-me-access',
+            secretOrKey: accessSecret,
         });
         this.configService = configService;
         this.usersService = usersService;

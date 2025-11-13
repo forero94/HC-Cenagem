@@ -265,7 +265,7 @@ function capitalizeFirst(text) {
 
 function buildSeatOption(dateObj, isoDate, time, seatIndex, capacity) {
   const seat = seatIndex + 1;
-  const seatSuffix = capacity > 1 ? ` · Cupo ${seat}` : '';
+  const seatSuffix = capacity > 1 ? ` · Consultorio ${seat}` : '';
   const longLabel = `${capitalizeFirst(
     dateObj.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'short' }),
   )} · ${time} hs${seatSuffix}`;
@@ -640,20 +640,44 @@ export function buildWeeklyAgendaData(agenda = [], weeksCount = 52, service = DE
   return weeks;
 }
 
+const toCleanString = (value) => {
+  if (value == null) return '';
+  return String(value).trim();
+};
+
+const stripDiacritics = (value) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+const normalizeComparable = (value) => stripDiacritics(value).toLowerCase();
+
+export function normalizeMotivoGroupId(value) {
+  const candidate = toCleanString(value);
+  if (!candidate) return '';
+  const directMatch = MOTIVO_CONSULTA_GROUPS.find((group) => group.id === candidate);
+  if (directMatch) return directMatch.id;
+  const comparable = normalizeComparable(candidate);
+  const labelMatch = MOTIVO_CONSULTA_GROUPS.find(
+    (group) => normalizeComparable(group.label) === comparable,
+  );
+  if (labelMatch) return labelMatch.id;
+  return '';
+}
+
 export function getMotivoGroupLabel(groupId) {
-  if (!groupId) return '';
-  const group = MOTIVO_CONSULTA_GROUPS.find((item) => item.id === groupId);
+  const resolvedId = normalizeMotivoGroupId(groupId);
+  if (!resolvedId) return '';
+  const group = MOTIVO_CONSULTA_GROUPS.find((item) => item.id === resolvedId);
   return group?.label || '';
 }
 
 export function normalizePrimeraConsultaInfo(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const nombre = (raw.nombre || '').toString().trim();
-  const apellido = (raw.apellido || '').toString().trim();
-  const motivoGroup = (raw.motivoGroup || '').toString().trim();
+  const nombre = toCleanString(raw.nombre);
+  const apellido = toCleanString(raw.apellido);
+  const motivoGroupCandidate = toCleanString(raw.motivoGroup) || toCleanString(raw.motivoGroupLabel);
+  const motivoGroup = normalizeMotivoGroupId(motivoGroupCandidate);
   const edadNumber = Number(raw.edad);
   const edad = Number.isFinite(edadNumber) && edadNumber > 0 ? Math.round(edadNumber) : null;
-  const motivoGroupLabelRaw = (raw.motivoGroupLabel || '').toString().trim();
+  const motivoGroupLabelRaw = toCleanString(raw.motivoGroupLabel);
   const motivoGroupLabel = motivoGroupLabelRaw || getMotivoGroupLabel(motivoGroup);
   return {
     nombre,
