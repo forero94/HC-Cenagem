@@ -18,6 +18,7 @@ import {
   normalizePrimeraConsultaInfo,
 } from '@/modules/home/agenda';
 import { MOTIVO_CONSULTA_GROUPS } from '@/lib/motivosConsulta.js';
+import { buildBrandedPrintDocument, escapeHtml, printHtmlDocument } from '@/lib/printTemplate.js';
 
 const SERVICE_OPTIONS = [
   { value: 'clinica', label: 'Clínica' },
@@ -68,6 +69,202 @@ const LABORATORIO_MODALIDAD_OPTIONS = [
   { value: 'extraccion', label: 'Extracción de muestra' },
   { value: 'recepcion', label: 'Recepción de muestra' },
 ];
+
+const cleanPrintableValue = (value) => {
+  if (value == null) return '';
+  return String(value).trim();
+};
+
+const resolveServiceDataFromAppointment = (appointment) => {
+  if (!appointment || typeof appointment !== 'object') return {};
+  const candidates = [
+    appointment.serviceDetails,
+    appointment.metadata && appointment.metadata.serviceDetails,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    if (candidate.data && typeof candidate.data === 'object') {
+      return candidate.data;
+    }
+    return candidate;
+  }
+  return {};
+};
+
+const getMemberFullName = (member) => {
+  if (!member || typeof member !== 'object') return '';
+  const parts = [
+    cleanPrintableValue(member?.nombre || member?.filiatorios?.nombre),
+    cleanPrintableValue(member?.apellido || member?.filiatorios?.apellido),
+  ].filter(Boolean);
+  if (parts.length) return parts.join(' ');
+  if (member?.filiatorios?.nombreCompleto) {
+    return cleanPrintableValue(member.filiatorios.nombreCompleto);
+  }
+  return cleanPrintableValue(getMemberDisplayName(member));
+};
+
+const buildPrintableAppointmentRow = (appointment, membersById = {}, familiesById = {}) => {
+  if (!appointment) return null;
+  const serviceData = resolveServiceDataFromAppointment(appointment);
+  const member =
+    appointment.memberId && membersById && typeof membersById === 'object'
+      ? membersById[appointment.memberId]
+      : null;
+  const family =
+    appointment.familyId && familiesById && typeof familiesById === 'object'
+      ? familiesById[appointment.familyId]
+      : null;
+  const primeraInfo = normalizePrimeraConsultaInfo(
+    appointment.primeraConsultaInfo
+      || appointment.metadata?.primeraConsultaInfo
+      || serviceData?.primeraConsultaInfo
+      || null,
+  );
+
+  let nombreApellido = '';
+  if (appointment.primeraConsulta) {
+    const primeraParts = [
+      cleanPrintableValue(primeraInfo?.nombre),
+      cleanPrintableValue(primeraInfo?.apellido),
+    ].filter(Boolean);
+    if (primeraParts.length) {
+      nombreApellido = primeraParts.join(' ');
+    }
+  }
+  if (!nombreApellido) {
+    const memberName = getMemberFullName(member);
+    if (memberName) {
+      nombreApellido = memberName;
+    }
+  }
+  if (!nombreApellido) {
+    const serviceParts = [
+      cleanPrintableValue(serviceData?.pacienteNombre || serviceData?.nombre),
+      cleanPrintableValue(serviceData?.pacienteApellido || serviceData?.apellido),
+    ].filter(Boolean);
+    if (serviceParts.length) {
+      nombreApellido = serviceParts.join(' ');
+    }
+  }
+
+  const motiveCandidates = [
+    appointment.primeraConsulta ? cleanPrintableValue(primeraInfo?.motivoGroupLabel) : '',
+    cleanPrintableValue(appointment.motivo),
+    cleanPrintableValue(serviceData?.diagnosticoMotivo),
+  ].filter(Boolean);
+  const motivoConsulta = motiveCandidates.length
+    ? motiveCandidates[0]
+    : appointment.primeraConsulta
+      ? 'Motivo pendiente'
+      : '';
+
+  const derivationCandidates = [
+    cleanPrintableValue(serviceData?.medicoDerivante || serviceData?.medico),
+    cleanPrintableValue(serviceData?.derivacion),
+    cleanPrintableValue(serviceData?.procedencia),
+  ].filter(Boolean);
+  const uniqueDerivations = [];
+  derivationCandidates.forEach((candidate) => {
+    if (!candidate) return;
+    if (!uniqueDerivations.includes(candidate)) {
+      uniqueDerivations.push(candidate);
+    }
+  });
+  const derivacion = uniqueDerivations.join(' / ');
+
+  const agCandidates = [
+    cleanPrintableValue(serviceData?.pacienteAg || serviceData?.ag),
+    cleanPrintableValue(family?.code),
+  ].filter(Boolean);
+  let agNumber = agCandidates[0] || '';
+  if (!agNumber && appointment.primeraConsulta) {
+    agNumber = 'Pendiente';
+  }
+  if (agNumber) {
+    agNumber = agNumber.toUpperCase();
+  }
+
+  const cupo = appointment.seat != null && appointment.seat !== ''
+    ? String(appointment.seat)
+    : cleanPrintableValue(appointment.time);
+
+  return {
+    cupo: cupo || '—',
+    nombreApellido: nombreApellido || '—',
+    motivoConsulta: motivoConsulta || '—',
+    derivacion: derivacion || '—',
+    agNumber: agNumber || '—',
+  };
+};
+
+const buildPrintableAgendaHtml = ({ dateLabel, rows }) => {
+  const tableRows = rows.length
+    ? rows
+        .map(
+          (row) => `
+          <tr>
+            <td>${escapeHtml(row.cupo)}</td>
+            <td>${escapeHtml(row.nombreApellido)}</td>
+            <td>${escapeHtml(row.motivoConsulta)}</td>
+            <td>${escapeHtml(row.derivacion)}</td>
+            <td>${escapeHtml(row.agNumber)}</td>
+          </tr>`,
+        )
+        .join('')
+    : `<tr><td colspan="5" class="agenda-print__empty">Sin turnos registrados para la fecha seleccionada.</td></tr>`;
+
+  const contentHtml = `
+    <table class="agenda-print__table">
+      <thead>
+        <tr>
+          <th>Cupo</th>
+          <th>Nombre y apellido</th>
+          <th>Motivo de consulta</th>
+          <th>Médico / Institución derivante</th>
+          <th>Nro de AG</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows}
+      </tbody>
+    </table>
+  `;
+  const documentTitle = dateLabel ? `Turnos del día - ${dateLabel}` : 'Turnos del día';
+  const subtitle = `Fecha del pase: ${dateLabel || 'Sin datos'}`;
+
+  return buildBrandedPrintDocument({
+    documentTitle,
+    heading: 'Turnos del día',
+    subtitle,
+    contentHtml,
+    extraStyles: `
+      .agenda-print__table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .agenda-print__table th {
+        text-align: left;
+        padding: 10px 12px;
+        background: #e2e8f0;
+        border: 1px solid #cbd5f5;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+      }
+      .agenda-print__table td {
+        padding: 10px 12px;
+        border: 1px solid #e2e8f0;
+      }
+      .agenda-print__empty {
+        text-align: center;
+        font-style: italic;
+        color: #475569;
+      }
+    `,
+  });
+};
 
 const createBaseClinicData = () => ({
   pacienteNombre: '',
@@ -2433,6 +2630,7 @@ export default function TodayAgenda({
   const [adding, setAdding] = useState(false);
   const [overbookMode, setOverbookMode] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarStyles, setCalendarStyles] = useState({});
   const [editingAppointment, setEditingAppointment] = useState(null);
   const isSelectedDateBlocked = useMemo(() => {
     return blockedDays.includes(selectedDate);
@@ -2480,6 +2678,52 @@ export default function TodayAgenda({
     if (!selectedDateObj) return 'Seleccionar fecha';
     return selectedDateObj.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }, [selectedDateObj]);
+
+  const updateCalendarPosition = useCallback(() => {
+    if (typeof window === 'undefined' || !datePickerRef.current) return;
+    const anchorRect = datePickerRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+    const isMobile = viewportWidth < 640;
+    const horizontalPadding = isMobile ? 24 : 32;
+    const desiredWidth = isMobile ? Math.min(360, viewportWidth - horizontalPadding) : 360;
+    if (isMobile) {
+      const left = Math.max(12, (viewportWidth - desiredWidth) / 2);
+      const maxTop = Math.max(12, viewportHeight - 24 - 320);
+      const top = Math.min(Math.max(12, anchorRect.bottom + 8), maxTop);
+      const maxHeight = Math.max(240, viewportHeight - top - 12);
+      setCalendarStyles({
+        position: 'fixed',
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${desiredWidth}px`,
+        maxHeight: `${maxHeight}px`,
+        overflowY: 'auto',
+        right: 'auto',
+        transform: 'none',
+      });
+    } else {
+      const width = Math.min(desiredWidth, viewportWidth - horizontalPadding);
+      setCalendarStyles({
+        position: 'absolute',
+        top: 'calc(100% + 8px)',
+        right: '0px',
+        width: `${width}px`,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showCalendar) return;
+    updateCalendarPosition();
+    const handleReposition = () => updateCalendarPosition();
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [showCalendar, updateCalendarPosition]);
 
   const bookedCountsByDate = useMemo(() => {
     const counts = new Map();
@@ -2641,6 +2885,25 @@ export default function TodayAgenda({
   }, [availableSlots, overbookMode, overbookSlots]);
 
   const friendlyDate = formatFriendlyDate(selectedDate);
+  const printableDateLabel = friendlyDate || selectedDateLabel || selectedDate || '';
+  const printableRows = useMemo(() => {
+    if (!Array.isArray(appointments) || !appointments.length) return [];
+    return appointments
+      .map((item) => buildPrintableAppointmentRow(item, membersById, familiesById))
+      .filter(Boolean);
+  }, [appointments, familiesById, membersById]);
+  const canPrintAgenda = printableRows.length > 0;
+  const handlePrintAgenda = useCallback(async () => {
+    if (!canPrintAgenda) return;
+    const html = buildPrintableAgendaHtml({
+      dateLabel: printableDateLabel,
+      rows: printableRows,
+    });
+    const success = await printHtmlDocument(html);
+    if (!success && typeof window !== 'undefined' && typeof window.alert === 'function') {
+      window.alert('No se pudo preparar la vista de impresión. Intentalo nuevamente.');
+    }
+  }, [canPrintAgenda, printableDateLabel, printableRows]);
   const handleOpenStandardForm = () => {
     if (adding && !overbookMode) {
       setAdding(false);
@@ -2706,8 +2969,8 @@ export default function TodayAgenda({
             </button>
             {showCalendar && (
               <div
-                className="absolute right-0 z-20 mt-2 rounded-2xl border border-slate-200 bg-white shadow-xl"
-                style={{ transform: 'scale(1.5)', transformOrigin: 'top right' }}
+                className="today-agenda-calendar-popover z-30 rounded-2xl border border-slate-200 bg-white shadow-xl"
+                style={calendarStyles}
               >
                 <DayPicker
                   mode="single"
@@ -2734,6 +2997,14 @@ export default function TodayAgenda({
             className={`px-3 py-2 rounded-xl border text-sm font-medium ${isTodaySelected ? 'bg-sky-100 border-sky-300 text-sky-700' : 'border-slate-300 hover:bg-slate-50'}`}
           >
             Hoy
+          </button>
+          <button
+            type="button"
+            onClick={handlePrintAgenda}
+            className="px-3 py-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canPrintAgenda}
+          >
+            Imprimir turnos
           </button>
           <button
             onClick={handleOpenStandardForm}

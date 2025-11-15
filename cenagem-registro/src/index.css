@@ -46,6 +46,13 @@ body {
   color: var(--text-strong);
 }
 
+.users-back-button {
+  color: #ffffff !important;
+}
+.users-back-button:hover {
+  color: #ffffff !important;
+}
+
 .container-app {
   @apply max-w-6xl mx-auto p-6;
 }
@@ -175,6 +182,16 @@ textarea::placeholder {
   .hover\\:bg-slate-50:hover { background-color: var(--surface-soft) !important; }
   .hover\\:bg-slate-100:hover { background-color: var(--surface-muted) !important; }
 }
+
+.today-agenda-calendar-popover {
+  transform-origin: top right;
+  overflow: hidden;
+}
+
+.today-agenda-calendar-popover .rdp {
+  width: 100%;
+}
+
 
 @layer components {
   .surface-primary {

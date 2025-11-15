@@ -2,6 +2,7 @@ import {
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -24,4 +25,8 @@ export class CreateRoleDto {
   @ArrayUnique()
   @IsEnum(Permission, { each: true })
   permissions: Permission[];
+
+  @IsBoolean()
+  @IsOptional()
+  requiresLicense?: boolean;
 }

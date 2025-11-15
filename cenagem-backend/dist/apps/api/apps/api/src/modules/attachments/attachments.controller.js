@@ -44,7 +44,7 @@ let AttachmentsController = class AttachmentsController {
             res.setHeader('Content-Type', 'application/octet-stream');
         }
         res.setHeader('Content-Length', String(content.size ?? content.buffer.length));
-        res.send(content.buffer);
+        return content.buffer;
     }
     update(attachmentId, body) {
         return this.attachments.update(attachmentId, body);

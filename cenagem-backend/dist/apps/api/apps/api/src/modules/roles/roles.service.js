@@ -42,6 +42,7 @@ let RolesService = class RolesService {
                 name: input.name,
                 description: input.description,
                 permissions: input.permissions,
+                requiresLicense: input.requiresLicense ?? false,
             },
         });
     }
@@ -52,6 +53,9 @@ let RolesService = class RolesService {
             }),
             ...(input.permissions !== undefined && {
                 permissions: { set: input.permissions },
+            }),
+            ...(input.requiresLicense !== undefined && {
+                requiresLicense: input.requiresLicense,
             }),
         };
         if (Object.keys(data).length === 0) {

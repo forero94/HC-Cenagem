@@ -11,6 +11,7 @@ const GeneticsPage = React.lazy(() => import('@/routes/GeneticsPage.jsx'));
 const PhotosPage = React.lazy(() => import('@/routes/PhotosPage.jsx'));
 const FamilyTreePage = React.lazy(() => import('@/routes/FamilyTreePage.jsx'));
 const UsersPage = React.lazy(() => import('@/routes/UsersPage.jsx'));
+const ProfilePage = React.lazy(() => import('@/routes/ProfilePage.jsx'));
 
 function parseLocationSegments(source) {
   if (!source) return { segments: [], params: {} };
@@ -49,6 +50,7 @@ function parseHash() {
   if (seg0 === 'family' && seg1) return { name: 'family', familyId: seg1, params };
   if (seg0 === 'analytics') return { name: 'analytics', params };
   if (seg0 === 'users') return { name: 'users', params };
+  if (seg0 === 'profile') return { name: 'profile', params };
   return { name: 'home', params };
 }
 
@@ -112,6 +114,20 @@ export default function AppRoutes({ user = { email: 'genetista@cenagem.gob.ar' }
     return (
       <Suspense fallback={<div className="p-6">Cargando usuarios…</div>}>
         <UsersPage
+          user={user}
+          onLogout={onLogout}
+          onBack={() => {
+            window.location.hash = '';
+          }}
+        />
+      </Suspense>
+    );
+  }
+
+  if (route.name === 'profile') {
+    return (
+      <Suspense fallback={<div className="p-6">Cargando perfil…</div>}>
+        <ProfilePage
           user={user}
           onLogout={onLogout}
           onBack={() => {

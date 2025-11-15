@@ -1088,6 +1088,9 @@ export default function HomePage({ user, onLogout }) {
         onLogout={onLogout}
         user={user}
         title="CENAGEM · HC Familiar"
+        onProfileClick={() => {
+          window.location.hash = '#/profile';
+        }}
       />
 
       {canViewUsers && (
@@ -1099,7 +1102,7 @@ export default function HomePage({ user, onLogout }) {
           <button
             type="button"
             onClick={() => { window.location.hash = '#/users'; }}
-            className="px-4 py-2 rounded-xl border border-white/40 text-sm font-medium text-white hover:bg-white/10 transition self-start sm:self-auto"
+            className="users-back-button px-4 py-2 rounded-xl border border-white/40 text-sm font-medium text-white hover:bg-white/10 transition self-start sm:self-auto"
           >
             Abrir panel
           </button>

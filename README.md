@@ -1,94 +1,93 @@
-# CENAGEM Monorepo
+# CENAGEM Registro Monorepo
 
-Este repositorio aloja tanto el frontend como el backend del proyecto.
+Plataforma para registrar y hacer seguimiento de familias, casos y turnos genéticos dentro del organismo de salud. El monorepo contiene tanto el portal web usado por los equipos asistenciales como la API que centraliza la lógica clínica-administrativa.
 
-- `cenagem-registro/`: aplicación web construida con Vite/React.
-- `cenagem-backend/`: API y servicios desarrollados con NestJS.
+## Stack y arquitectura
+- Frontend `cenagem-registro/`: React 19 + Vite 7, React Query, Tailwind y componentes especializados para el flujo de ingreso de casos.
+- Backend `cenagem-backend/`: NestJS 11 sobre Node.js 20, Prisma ORM, autenticación basada en JWT y documentación OpenAPI.
+- Datos: PostgreSQL 15 con conexión TLS obligatoria.
+- Borde: build estático servido por Nginx Windows; las peticiones `/api/*` se proxied hacia el backend (ver `documentation/01-Architecture.md`).
 
-## Guía de instalación en una nueva PC
-
-### Prerrequisitos
-- Node.js 20 LTS (incluye `npm`). Verifica con `node -v` y `npm -v`.
-- Git para clonar el repositorio.
-- PostgreSQL 14 o superior en ejecución y accesible. Alternativamente puedes usar un contenedor Docker o un servicio administrado, pero asegúrate de contar con una URL válida para `DATABASE_URL`.
-- Acceso a los archivos `.env` provistos por el equipo (no se versionan).
-
-### 1. Clonar o actualizar el repositorio
-- Primera instalación:
-  ```bash
-  git clone https://<tu-origen>/CENAGEM.git
-  cd CENAGEM
-  ```
-- Si ya tienes la carpeta local y solo quieres traer cambios nuevos:
-  ```bash
-  cd CENAGEM
-  git pull
-  ```
-
-### 2. Configurar variables de entorno
-- Solicita al equipo los archivos `.env` necesarios para `cenagem-registro/` y `cenagem-backend/`.
-- Colócalos en cada carpeta correspondiente (por ejemplo, `cenagem-backend/.env`).
-- Actualiza valores como `DATABASE_URL` para apuntar a tu instancia local o remota de PostgreSQL.
-
-### 3. Instalar dependencias del frontend
-```bash
-cd cenagem-registro
-npm install
+## Estructura del repositorio
+```
+cenagem-registro/        # App React (Vite) para registro y trazabilidad de casos
+cenagem-backend/         # API NestJS + Prisma + generación de OpenAPI
+documentation/           # Guías de arquitectura, seguridad y operación
+plantillas/              # Insumos auxiliares (cartas, formatos operativos)
+scripts/                 # Utilidades (p.ej. generator del wizard de casos)
+README.md                # Este documento
 ```
 
-### 4. Instalar dependencias del backend
-```bash
-cd ../cenagem-backend
-npm install
-```
+## Requisitos previos
+- Node.js 20.x LTS (incluye npm 10+). Comprueba con `node -v` y `npm -v`.
+- Git y acceso al origen del repositorio.
+- PostgreSQL 14+ accesible (local o remoto) con credenciales válidas para `DATABASE_URL`.
+- Archivos `.env` provistos por el equipo:
+  - `cenagem-registro/.env` (variables Vite como `VITE_API_BASE_URL`).
+  - `cenagem-backend/.env` (JWT secrets, `DATABASE_URL`, throttling, etc.).
+- Opcional: `npm install -g win-node-env` en Windows para manejar `NODE_ENV`.
 
-### 5. Preparar Prisma y la base de datos
-- Asegúrate de que tu base de datos esté accesible (por ejemplo, PostgreSQL corriendo en `localhost`).
-- Dentro de `cenagem-backend` ejecuta:
-  ```bash
-  npm run prisma:generate   # genera el cliente de Prisma
-  npm run db:push           # sincroniza el esquema con la base de datos local
-  npm run db:migrate        # crea/aplica migraciones durante el desarrollo
-  npm run db:seed           # carga datos iniciales (si aplica)
-  ```
-  - Para revisar o editar la base de datos con la interfaz de Prisma:
-    ```bash
-    npm run db:studio
-    ```
-  - En entornos donde solo quieras aplicar migraciones existentes (por ejemplo CI/QA/Producción):
-    ```bash
-    npx prisma migrate deploy
-    ```
+## Configuración rápida en una nueva PC
+1. **Clona o actualiza el repo**
+   ```bash
+   git clone https://<tu-origen>/CENAGEM.git
+   cd CENAGEM
+   # o, si ya existe
+   git pull
+   ```
+2. **Variables de entorno**
+   - Copia los `.env` compartidos a cada carpeta.
+   - Para un backend de prueba puedes ejecutar `cd cenagem-backend && npm run setup:dev-env`, lo que genera `apps/api/.env.local` con secretos aleatorios.
+3. **Instala dependencias**
+   ```bash
+   cd cenagem-registro && npm install
+   cd ../cenagem-backend && npm install
+   ```
+4. **Prepara la base de datos y Prisma (desde `cenagem-backend/`)**
+   ```bash
+   npm run prisma:generate   # cliente Prisma
+   npm run db:push           # aplica el esquema al entorno local
+   npm run db:seed           # datos iniciales si están definidos
+   ```
+   - Usa `npm run db:studio` para inspeccionar datos o `npx prisma migrate deploy` si solo aplicas migraciones ya versionadas.
+5. **Levanta los servicios en modo desarrollo**
+   ```bash
+   # Terminal 1
+   cd cenagem-registro && npm run dev     # http://localhost:5173 (por defecto)
 
-### 6. Ejecutar los servidores en modo desarrollo
-- Frontend:
-  ```bash
-  cd ../cenagem-registro
-  npm run dev
-  ```
-- Backend:
-  ```bash
-  cd ../cenagem-backend
-  npm run start:dev
-  ```
+   # Terminal 2
+   cd cenagem-backend && npm run start:dev   # http://localhost:3000/api/v1
+   ```
+   Ajusta puertos según tus `.env`. Mantén ambos procesos activos.
 
-Mantén ambos procesos en ejecución (puedes usar dos terminales). Consulta los archivos `.env` para conocer los puertos configurados y la URL base de la API.
+## Scripts útiles del día a día
+### Frontend (`cenagem-registro`)
+- `npm run dev`: servidor Vite en caliente.
+- `npm run build`: build productivo listo para Nginx.
+- `npm run preview`: prueba local del build optimizado.
+- `npm run lint`: reglas eslint compartidas.
+- `npm run generate:case-wizard`: regenera tipos para el asistente de nuevos casos a partir de los JSON de configuración en `scripts/`.
 
-## Flujo de trabajo
+### Backend (`cenagem-backend`)
+- `npm run start:dev`: backend Nest con watch (API `api/v1`).
+- `npm run start:dev:local`: prepara secretos locales y arranca el backend.
+- `npm run test`, `npm run test:e2e`, `npm run test:cov`: suites unitarias, e2e y cobertura.
+- `npm run lint`: eslint para `apps/` y `libs/`.
+- `npm run openapi:sync`: genera el archivo `openapi/cenagem-api.json` y los tipos TypeScript consumidos por el frontend.
+- Scripts Prisma (`prisma:generate`, `db:push`, `db:migrate`, `db:seed`, `db:studio`) para la capa de datos.
 
-Ejecuta los comandos dentro de cada paquete:
+## Calidad y comprobaciones recomendadas
+- Ejecuta `npm run lint` y `npm run test` antes de abrir un PR.
+- Confirma que el frontend compila (`npm run build`) y que el backend supera `npm run build`.
+- Si agregas endpoints, actualiza OpenAPI (`npm run openapi:sync`) y sincroniza los tipos en el frontend.
+- Para cambios de esquema Prisma, versiona la migración (`npm run db:migrate`) y documenta cualquier paso manual en `documentation/04-Operations-Runbook.md`.
 
-- Frontend:
-  ```bash
-  cd cenagem-registro
-  npm install
-  npm run dev
-  ```
-- Backend:
-  ```bash
-  cd cenagem-backend
-  npm install
-  npm run start:dev
-  ```
+## Documentación y operación
+- Guías profundas en `documentation/`:
+  - Arquitectura y topología (`01-Architecture.md`).
+  - Seguridad, cumplimiento y runbooks (`02-Security.md`, `04-Operations-Runbook.md`, etc.).
+  - Manual de despliegue paso a paso (`03-Deployment-Guide.md`).
+- Las plantillas de comunicación y soporte están en `plantillas/`.
+- Los procedimientos automatizados (generadores, utilitarios) viven en `scripts/`. Revisa cada script antes de ejecutarlo en producción.
 
-Ambos proyectos conservan sus configuraciones locales (`.env*`) fuera del control de versiones.
+Para dudas operativas, revisa primero `documentation/00-SUMMARY.md` y el runbook correspondiente antes de escalar al equipo de plataforma.

@@ -13,6 +13,7 @@ export default function FamilyPage({ user = { email: 'genetista@cenagem.gob.ar' 
     updateMember,
     deleteMember,
     updateFamily,
+    downloadAttachment,
   } = useCenagemStore();
 
   useEffect(() => {
@@ -39,6 +40,11 @@ export default function FamilyPage({ user = { email: 'genetista@cenagem.gob.ar' 
   const studies = useMemo(
     () => state.studies.filter((study) => study.familyId === familyId),
     [state.studies, familyId],
+  );
+
+  const attachments = useMemo(
+    () => state.attachments.filter((attachment) => attachment.familyId === familyId),
+    [state.attachments, familyId],
   );
 
   useEffect(() => {
@@ -106,6 +112,8 @@ export default function FamilyPage({ user = { email: 'genetista@cenagem.gob.ar' 
         members={members}
         evolutions={evolutions}
         studies={studies}
+        attachments={attachments}
+        downloadAttachment={downloadAttachment}
         onBack={() => { window.location.hash = ''; }}
         onAddEvolution={handleAddEvolution}
         onCreateMember={handleCreateMember}

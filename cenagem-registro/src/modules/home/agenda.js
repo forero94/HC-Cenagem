@@ -570,7 +570,7 @@ export function normalizeFamilyCodeInput(value) {
   return `AG-${digits.padStart(4, '0')}`;
 }
 
-export function buildWeeklyAgendaData(agenda = [], weeksCount = 52, service = DEFAULT_SERVICE) {
+export function buildWeeklyAgendaData(agenda = [], weeksCount = 52, service = DEFAULT_SERVICE, options = {}) {
   const normalizedService = normalizeServiceKey(service);
   const today = new Date();
   const startOfWeek = (date) => {
@@ -581,11 +581,11 @@ export function buildWeeklyAgendaData(agenda = [], weeksCount = 52, service = DE
     return copy;
   };
 
-  const weeks = [];
-  let cursor = startOfWeek(today);
+  const { pastWeeks = 0 } = typeof options === 'number' ? { pastWeeks: options } : options || {};
+  const safePastWeeks = Number.isFinite(pastWeeks) && pastWeeks > 0 ? Math.min(Math.floor(pastWeeks), 26) : 0;
+  const currentWeekStart = startOfWeek(today);
 
-  for (let i = 0; i < weeksCount; i += 1) {
-    const start = addDays(cursor, 7 * i);
+  const buildWeekPayload = (start) => {
     const end = addDays(start, 6);
     const days = [];
     for (let d = 0; d < 7; d += 1) {
@@ -627,14 +627,26 @@ export function buildWeeklyAgendaData(agenda = [], weeksCount = 52, service = DE
 
     const availableCount = days.reduce((acc, day) => acc + day.futureSlots.length, 0);
 
-    weeks.push({
+    return {
       start,
       end,
       startLabel: start.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
       endLabel: end.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
       availableCount,
       days,
-    });
+    };
+  };
+
+  const weeks = [];
+
+  for (let i = safePastWeeks; i > 0; i -= 1) {
+    const pastStart = addDays(currentWeekStart, -7 * i);
+    weeks.push(buildWeekPayload(pastStart));
+  }
+
+  for (let i = 0; i < weeksCount; i += 1) {
+    const start = addDays(currentWeekStart, 7 * i);
+    weeks.push(buildWeekPayload(start));
   }
 
   return weeks;

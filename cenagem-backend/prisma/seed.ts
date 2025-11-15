@@ -7,6 +7,7 @@ type RoleSpec = {
   name: string;
   description: string;
   permissions: Permission[];
+  requiresLicense?: boolean;
 };
 
 const roleSpecs: RoleSpec[] = [
@@ -28,6 +29,26 @@ const roleSpecs: RoleSpec[] = [
     permissions: [Permission.CASES_VIEW, Permission.CASES_MANAGE],
   },
   {
+    name: 'citogenetica',
+    description: 'Equipo de citogenética. Matrícula profesional obligatoria.',
+    permissions: [
+      Permission.CASES_VIEW,
+      Permission.CASES_MANAGE,
+      Permission.CATALOGUE_MANAGE,
+    ],
+    requiresLicense: true,
+  },
+  {
+    name: 'molecular',
+    description: 'Equipo de genética molecular. Matrícula profesional obligatoria.',
+    permissions: [
+      Permission.CASES_VIEW,
+      Permission.CASES_MANAGE,
+      Permission.CATALOGUE_MANAGE,
+    ],
+    requiresLicense: true,
+  },
+  {
     name: 'medicos',
     description: 'Equipo médico con control pleno de casos y catálogos.',
     permissions: [
@@ -35,11 +56,7 @@ const roleSpecs: RoleSpec[] = [
       Permission.CASES_MANAGE,
       Permission.CATALOGUE_MANAGE,
     ],
-  },
-  {
-    name: 'editor',
-    description: 'Edición de catálogos y material de referencia.',
-    permissions: [Permission.CASES_VIEW, Permission.CATALOGUE_MANAGE],
+    requiresLicense: true,
   },
 ] ;
 
@@ -48,6 +65,7 @@ type UserSpec = {
   password: string;
   firstName: string;
   lastName: string;
+  documentNumber: string;
   roles: string[];
   licenseNumber?: string;
 };
@@ -60,6 +78,7 @@ const userSpecs: UserSpec[] = [
     password: sharedPassword,
     firstName: 'Admin',
     lastName: 'Demo',
+    documentNumber: '20000000',
     roles: ['admin'],
     licenseNumber: 'MN-0001',
   },
@@ -68,13 +87,33 @@ const userSpecs: UserSpec[] = [
     password: sharedPassword,
     firstName: 'Equipo',
     lastName: 'Admision',
+    documentNumber: '21000000',
     roles: ['admision'],
+  },
+  {
+    email: 'citogenetica@cenagem.gob.ar',
+    password: sharedPassword,
+    firstName: 'Equipo',
+    lastName: 'Citogenetica',
+    documentNumber: '22000000',
+    roles: ['citogenetica'],
+    licenseNumber: 'MN-0203',
+  },
+  {
+    email: 'molecular@cenagem.gob.ar',
+    password: sharedPassword,
+    firstName: 'Equipo',
+    lastName: 'Molecular',
+    documentNumber: '23000000',
+    roles: ['molecular'],
+    licenseNumber: 'MN-0304',
   },
   {
     email: 'medico@cenagem.gob.ar',
     password: sharedPassword,
     firstName: 'Equipo',
     lastName: 'Medicos',
+    documentNumber: '24000000',
     roles: ['medicos'],
     licenseNumber: 'MN-0102',
   },
@@ -87,11 +126,13 @@ async function upsertRoles() {
       update: {
         description: roleSpec.description,
         permissions: roleSpec.permissions,
+        requiresLicense: roleSpec.requiresLicense ?? false,
       },
       create: {
         name: roleSpec.name,
         description: roleSpec.description,
         permissions: roleSpec.permissions,
+        requiresLicense: roleSpec.requiresLicense ?? false,
       },
     });
   }
@@ -109,6 +150,7 @@ async function upsertUsers() {
         lastName: userSpec.lastName,
         passwordHash,
         status: UserStatus.ACTIVE,
+        documentNumber: userSpec.documentNumber,
         licenseNumber: userSpec.licenseNumber ?? null,
       },
       create: {
@@ -117,6 +159,7 @@ async function upsertUsers() {
         firstName: userSpec.firstName,
         lastName: userSpec.lastName,
         status: UserStatus.ACTIVE,
+        documentNumber: userSpec.documentNumber,
         licenseNumber: userSpec.licenseNumber ?? null,
       },
     });

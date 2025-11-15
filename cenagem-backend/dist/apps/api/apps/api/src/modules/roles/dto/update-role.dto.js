@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 class UpdateRoleDto {
     description;
     permissions;
+    requiresLicense;
 }
 exports.UpdateRoleDto = UpdateRoleDto;
 __decorate([
@@ -30,4 +31,9 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Array)
 ], UpdateRoleDto.prototype, "permissions", void 0);
+__decorate([
+    (0, class_validator_1.IsBoolean)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Boolean)
+], UpdateRoleDto.prototype, "requiresLicense", void 0);
 //# sourceMappingURL=update-role.dto.js.map

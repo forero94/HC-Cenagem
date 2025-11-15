@@ -20,6 +20,7 @@ class UploadTicketUserDto {
     displayName;
     primaryRole;
     licenseNumber;
+    documentNumber;
     scope;
 }
 __decorate([
@@ -50,6 +51,10 @@ __decorate([
     (0, swagger_1.ApiProperty)({ required: false, nullable: true }),
     __metadata("design:type", Object)
 ], UploadTicketUserDto.prototype, "licenseNumber", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ required: false, nullable: true }),
+    __metadata("design:type", Object)
+], UploadTicketUserDto.prototype, "documentNumber", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ enum: ['upload-ticket'] }),
     __metadata("design:type", String)

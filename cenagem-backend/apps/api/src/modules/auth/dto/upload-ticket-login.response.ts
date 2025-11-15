@@ -23,6 +23,9 @@ class UploadTicketUserDto {
   @ApiProperty({ required: false, nullable: true })
   licenseNumber: string | null;
 
+  @ApiProperty({ required: false, nullable: true })
+  documentNumber: string | null;
+
   @ApiProperty({ enum: ['upload-ticket'] })
   scope: 'upload-ticket';
 }

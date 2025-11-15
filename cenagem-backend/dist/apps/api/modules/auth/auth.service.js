@@ -144,6 +144,7 @@ let AuthService = class AuthService {
             .trim();
         const primaryRole = roleNames[0] ?? null;
         const licenseNumber = user.licenseNumber ?? null;
+        const documentNumber = user.documentNumber ?? null;
         const accessPayload = {
             sub: user.id,
             email: user.email,
@@ -181,6 +182,7 @@ let AuthService = class AuthService {
                 displayName: displayName || user.email,
                 primaryRole,
                 licenseNumber,
+                documentNumber,
                 scope: 'upload-ticket',
             },
             ticket: {

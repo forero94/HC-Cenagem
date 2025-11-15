@@ -35,21 +35,21 @@ export declare class UploadTicketsService {
             } | null;
             createdBy: {
                 id: string;
+                email: string;
                 firstName: string;
                 lastName: string;
-                email: string;
             };
         } & {
             id: string;
             metadata: Prisma.JsonValue | null;
             createdAt: Date;
+            expiresAt: Date;
+            revokedAt: Date | null;
             familyId: string;
             memberId: string | null;
             secretHash: string;
-            expiresAt: Date;
             usageCount: number;
             lastUsedAt: Date | null;
-            revokedAt: Date | null;
             createdById: string;
         };
         familyCode: string;

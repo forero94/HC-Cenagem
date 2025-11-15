@@ -85,6 +85,10 @@ let UsersService = class UsersService {
     }
     async createUser(input, actorId) {
         const username = input.username.toLowerCase().trim();
+        const documentNumber = input.documentNumber?.trim() ?? '';
+        if (!documentNumber) {
+            throw new common_1.BadRequestException('El DNI es obligatorio.');
+        }
         const existing = await this.prisma.user.findUnique({
             where: { email: username },
         });
@@ -93,25 +97,39 @@ let UsersService = class UsersService {
         }
         const passwordHash = await argon2.hash(input.password);
         const roleNames = input.roles ?? [];
+        const trimmedLicense = input.licenseNumber?.trim() ?? '';
+        const normalizedLicense = trimmedLicense.length > 0 ? trimmedLicense : null;
         return this.prisma.$transaction(async (tx) => {
-            const user = await tx.user.create({
-                data: {
-                    email: username,
-                    passwordHash,
-                    firstName: input.firstName,
-                    lastName: input.lastName,
-                    licenseNumber: input.licenseNumber?.trim() || null,
-                },
-            });
+            let roles = [];
             if (roleNames.length > 0) {
-                const roles = await tx.role.findMany({
+                roles = await tx.role.findMany({
                     where: { name: { in: roleNames } },
+                    select: {
+                        id: true,
+                        name: true,
+                        requiresLicense: true,
+                    },
                 });
                 if (roles.length !== roleNames.length) {
                     const foundNames = new Set(roles.map((role) => role.name));
                     const missing = roleNames.filter((role) => !foundNames.has(role));
                     throw new common_1.BadRequestException(`Roles no válidos: ${missing.join(', ')}`);
                 }
+                if (roles.some((role) => role.requiresLicense) && !normalizedLicense) {
+                    throw new common_1.BadRequestException('Los roles seleccionados requieren una matrícula profesional registrada.');
+                }
+            }
+            const user = await tx.user.create({
+                data: {
+                    email: username,
+                    passwordHash,
+                    firstName: input.firstName,
+                    lastName: input.lastName,
+                    documentNumber,
+                    licenseNumber: normalizedLicense,
+                },
+            });
+            if (roles.length > 0) {
                 await tx.userRole.createMany({
                     data: roles.map((role) => ({
                         userId: user.id,
@@ -152,11 +170,24 @@ let UsersService = class UsersService {
             }
             const roles = await tx.role.findMany({
                 where: { name: { in: roleNames } },
+                select: {
+                    id: true,
+                    name: true,
+                    requiresLicense: true,
+                },
             });
             if (roles.length !== roleNames.length) {
                 const foundNames = new Set(roles.map((role) => role.name));
                 const missing = roleNames.filter((role) => !foundNames.has(role));
                 throw new common_1.BadRequestException(`Roles no válidos: ${missing.join(', ')}`);
+            }
+            const needsLicense = roles.filter((role) => role.requiresLicense);
+            const hasLicense = typeof user.licenseNumber === 'string' &&
+                user.licenseNumber.trim().length > 0;
+            if (needsLicense.length > 0 && !hasLicense) {
+                throw new common_1.BadRequestException(`Los roles ${needsLicense
+                    .map((role) => role.name)
+                    .join(', ')} requieren una matrícula profesional registrada.`);
             }
             await tx.userRole.deleteMany({ where: { userId } });
             if (roles.length) {
@@ -173,6 +204,98 @@ let UsersService = class UsersService {
                 include: this.userInclude,
             });
         });
+    }
+    async updateUser(userId, input) {
+        const existing = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: this.userInclude,
+        });
+        if (!existing) {
+            throw new common_1.NotFoundException('Usuario no encontrado');
+        }
+        const hasLicenseBoundRole = existing.roles.some((relation) => relation.role.requiresLicense);
+        const data = {};
+        let hasChanges = false;
+        if (typeof input.username === 'string') {
+            const normalized = input.username.trim().toLowerCase();
+            if (!normalized) {
+                throw new common_1.BadRequestException('El usuario no puede quedar vacío.');
+            }
+            data.email = normalized;
+            hasChanges = true;
+        }
+        if (typeof input.firstName === 'string') {
+            const trimmed = input.firstName.trim();
+            if (!trimmed) {
+                throw new common_1.BadRequestException('El nombre es obligatorio.');
+            }
+            data.firstName = trimmed;
+            hasChanges = true;
+        }
+        if (typeof input.lastName === 'string') {
+            const trimmed = input.lastName.trim();
+            if (!trimmed) {
+                throw new common_1.BadRequestException('El apellido es obligatorio.');
+            }
+            data.lastName = trimmed;
+            hasChanges = true;
+        }
+        if (typeof input.documentNumber === 'string') {
+            const trimmed = input.documentNumber.trim();
+            if (!trimmed) {
+                throw new common_1.BadRequestException('El DNI es obligatorio.');
+            }
+            data.documentNumber = trimmed;
+            hasChanges = true;
+        }
+        if (typeof input.licenseNumber === 'string') {
+            const trimmed = input.licenseNumber.trim();
+            if (hasLicenseBoundRole && trimmed.length === 0) {
+                throw new common_1.BadRequestException('Los roles asignados requieren una matrícula profesional registrada.');
+            }
+            data.licenseNumber = trimmed.length > 0 ? trimmed : null;
+            hasChanges = true;
+        }
+        if (typeof input.password === 'string') {
+            const passwordHash = await argon2.hash(input.password);
+            data.passwordHash = passwordHash;
+            hasChanges = true;
+        }
+        if (!hasChanges) {
+            throw new common_1.BadRequestException('No hay cambios para aplicar.');
+        }
+        try {
+            return await this.prisma.user.update({
+                where: { id: userId },
+                data,
+                include: this.userInclude,
+            });
+        }
+        catch (error) {
+            if (error instanceof library_1.PrismaClientKnownRequestError) {
+                if (error.code === 'P2025') {
+                    throw new common_1.NotFoundException('Usuario no encontrado');
+                }
+                if (error.code === 'P2002') {
+                    throw new common_1.BadRequestException('El usuario ya está en uso.');
+                }
+            }
+            throw error;
+        }
+    }
+    async deleteUser(userId) {
+        try {
+            await this.prisma.user.delete({
+                where: { id: userId },
+            });
+        }
+        catch (error) {
+            if (error instanceof library_1.PrismaClientKnownRequestError &&
+                error.code === 'P2025') {
+                throw new common_1.NotFoundException('Usuario no encontrado');
+            }
+            throw error;
+        }
     }
     async updateLastLogin(userId) {
         await this.prisma.user.update({

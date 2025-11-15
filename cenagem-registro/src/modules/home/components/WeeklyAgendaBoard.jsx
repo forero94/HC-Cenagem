@@ -12,6 +12,9 @@ import {
   formatISODateLocal,
 } from '@/modules/home/agenda';
 
+const DEFAULT_PAST_WEEKS = 13; // ~3 months
+const DEFAULT_FUTURE_WEEKS = 13; // ~3 months
+
 export default function WeeklyAgendaBoard({
   agenda,
   membersById,
@@ -21,7 +24,14 @@ export default function WeeklyAgendaBoard({
   service = 'clinica',
 }) {
   const normalizedService = (typeof service === 'string' && service.trim().toLowerCase()) || 'clinica';
-  const weeks = useMemo(() => buildWeeklyAgendaData(agenda, 52, normalizedService), [agenda, normalizedService]);
+  const weeks = useMemo(
+    () => buildWeeklyAgendaData(agenda, DEFAULT_FUTURE_WEEKS, normalizedService, { pastWeeks: DEFAULT_PAST_WEEKS }),
+    [agenda, normalizedService],
+  );
+  const currentWeekIndex = useMemo(
+    () => (weeks.length ? Math.min(DEFAULT_PAST_WEEKS, weeks.length - 1) : 0),
+    [weeks.length],
+  );
   const [weekIndex, setWeekIndex] = useState(0);
   const [managementMode, setManagementMode] = useState(false);
   const [blockedDays, setBlockedDays] = useState([]);
@@ -89,12 +99,14 @@ export default function WeeklyAgendaBoard({
   };
 
   useEffect(() => {
-    if (!autoSnapRef.current) {
-      const targetIndex = firstAvailableIndex >= 0 ? firstAvailableIndex : 0;
+    if (!autoSnapRef.current && weeks.length) {
+      const targetIndex = firstAvailableIndex >= 0
+        ? Math.max(firstAvailableIndex, currentWeekIndex)
+        : currentWeekIndex;
       setWeekIndex(targetIndex);
       autoSnapRef.current = true;
     }
-  }, [firstAvailableIndex]);
+  }, [currentWeekIndex, firstAvailableIndex, weeks.length]);
 
   useEffect(() => {
     const weeksLength = weeks.length;

@@ -17,6 +17,7 @@ class CreateUserDto {
     password;
     firstName;
     lastName;
+    documentNumber;
     roles;
     licenseNumber;
 }
@@ -39,6 +40,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateUserDto.prototype, "lastName", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_transformer_1.Transform)(({ value }) => typeof value === 'string' ? value.trim() : value),
+    __metadata("design:type", String)
+], CreateUserDto.prototype, "documentNumber", void 0);
 __decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ArrayNotEmpty)(),

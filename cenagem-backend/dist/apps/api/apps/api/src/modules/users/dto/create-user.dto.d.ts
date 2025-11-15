@@ -3,6 +3,7 @@ export declare class CreateUserDto {
     password: string;
     firstName: string;
     lastName: string;
+    documentNumber: string;
     roles?: string[];
     licenseNumber?: string;
 }

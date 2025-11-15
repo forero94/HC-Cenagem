@@ -37,6 +37,40 @@ const CLASS_COLORS = {
   Negativo: '#475569',
   Pendiente: '#94a3b8',
 };
+const AGE_GROUP_ORDER = ['Prenatal', '0-1', '1-5', '5-12', '12-18', '18-40', '40-65', '65+', 'Sin dato'];
+
+function monthKeyToIndex(key) {
+  if (typeof key !== 'string') return null;
+  const match = key.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+  return (year * 12) + (month - 1);
+}
+
+function indexToMonthKey(index) {
+  const year = Math.floor(index / 12);
+  const month = (index % 12) + 1;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+}
+
+function buildTimelineMonths(monthCounts, limit = 12) {
+  if (!(monthCounts instanceof Map) || !monthCounts.size) return [];
+  const entries = Array.from(monthCounts.keys())
+    .map((key) => ({ key, idx: monthKeyToIndex(key) }))
+    .filter((item) => item.idx !== null)
+    .sort((a, b) => a.idx - b.idx);
+  if (!entries.length) return [];
+  const lastIdx = entries[entries.length - 1].idx;
+  const startIdx = Math.max(lastIdx - (limit - 1), 0);
+  const result = [];
+  for (let idx = startIdx; idx <= lastIdx; idx += 1) {
+    const key = indexToMonthKey(idx);
+    result.push({ month: key, count: monthCounts.get(key) || 0 });
+  }
+  return result.length > limit ? result.slice(result.length - limit) : result;
+}
 
 function stripOrdinalLabel(label) {
   if (typeof label !== 'string') return '';
@@ -656,6 +690,15 @@ function computeDashboardMetrics(state, cases) {
     families: families.length,
     patients: patients.length || (Array.isArray(state?.members) ? state.members.filter((m) => (m.rol || '').toLowerCase() === 'proband').length : 0),
     studies: cases.length,
+    confirmedPatients: 0,
+    suspectedPatients: 0,
+    pendingPatients: 0,
+    uniqueGenes: 0,
+    labs: 0,
+    services: 0,
+    provinces: 0,
+    rareCandidates: 0,
+    activeAlerts: 0,
   };
 
   const groupCounts = new Map();
@@ -665,6 +708,13 @@ function computeDashboardMetrics(state, cases) {
   const statusCounts = new Map();
   const yearCounts = new Map();
   const monthCounts = new Map();
+  const labCounts = new Map();
+  const sexCounts = new Map();
+  const ageGroupCounts = new Map();
+  const provinceCounts = new Map();
+  const seenPatients = new Set();
+  const rareCasesPool = [];
+  const alertsPool = [];
   let accRequest = 0;
   let accRequestCount = 0;
   let accResult = 0;
@@ -673,6 +723,16 @@ function computeDashboardMetrics(state, cases) {
   let accTotalCount = 0;
 
   for (const entry of cases) {
+    if (!seenPatients.has(entry.patientKey)) {
+      seenPatients.add(entry.patientKey);
+      const sex = entry.sex || 'Sin dato';
+      const ageGroup = entry.ageGroup || 'Sin dato';
+      const rawProvince = typeof entry.provincia === 'string' ? entry.provincia.trim() : '';
+      const province = rawProvince || 'Sin dato';
+      sexCounts.set(sex, (sexCounts.get(sex) || 0) + 1);
+      ageGroupCounts.set(ageGroup, (ageGroupCounts.get(ageGroup) || 0) + 1);
+      provinceCounts.set(province, (provinceCounts.get(province) || 0) + 1);
+    }
     if (entry.groupId) {
       const current = groupCounts.get(entry.groupId) || { id: entry.groupId, label: GROUP_LABELS[entry.groupId] || entry.groupLabel || entry.groupId, count: 0 };
       current.count += 1;
@@ -686,6 +746,9 @@ function computeDashboardMetrics(state, cases) {
     }
     if (entry.requestingService) {
       serviceCounts.set(entry.requestingService, (serviceCounts.get(entry.requestingService) || 0) + 1);
+    }
+    if (entry.lab) {
+      labCounts.set(entry.lab, (labCounts.get(entry.lab) || 0) + 1);
     }
     if (entry.cohortYear) {
       yearCounts.set(entry.cohortYear, (yearCounts.get(entry.cohortYear) || 0) + 1);
@@ -705,6 +768,12 @@ function computeDashboardMetrics(state, cases) {
       accTotal += entry.turnaroundTotal;
       accTotalCount += 1;
     }
+    if (entry.isRare || entry.novelVariant) {
+      rareCasesPool.push(entry);
+    }
+    if (entry.notInGnomad || entry.notInClinvar || entry.novelVariant) {
+      alertsPool.push(entry);
+    }
   }
 
   for (const patient of patients) {
@@ -714,6 +783,10 @@ function computeDashboardMetrics(state, cases) {
   const diagnosisStatus = Array.from(statusCounts.entries())
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => (b.count - a.count));
+
+  totals.confirmedPatients = statusCounts.get('Confirmado') || 0;
+  totals.suspectedPatients = statusCounts.get('Sospecha monogenica') || 0;
+  totals.pendingPatients = statusCounts.get('Pendiente') || 0;
 
   const groupDistribution = Array.from(groupCounts.values())
     .sort((a, b) => (b.count - a.count));
@@ -731,10 +804,34 @@ function computeDashboardMetrics(state, cases) {
     .sort((a, b) => (b.count - a.count))
     .slice(0, 6);
 
-  const timelineMonths = Array.from(monthCounts.entries())
-    .map(([month, count]) => ({ month, count }))
-    .sort((a, b) => (a.month.localeCompare(b.month)))
-    .slice(-12);
+  const labDistribution = Array.from(labCounts.entries())
+    .map(([name, count]) => ({ name, label: name, count }))
+    .sort((a, b) => (b.count - a.count))
+    .slice(0, 6);
+
+  const orderByAgeGroup = (label) => {
+    const idx = AGE_GROUP_ORDER.indexOf(label);
+    return idx === -1 ? AGE_GROUP_ORDER.length : idx;
+  };
+
+  const ageGroupDistribution = Array.from(ageGroupCounts.entries())
+    .map(([name, count]) => ({ name, label: name, count }))
+    .sort((a, b) => orderByAgeGroup(a.name) - orderByAgeGroup(b.name));
+
+  const sexDistribution = Array.from(sexCounts.entries())
+    .map(([name, count]) => ({ name, label: name, count }))
+    .sort((a, b) => (b.count - a.count));
+
+  const provinceDistribution = Array.from(provinceCounts.entries())
+    .map(([name, count]) => ({ name, label: name, count }))
+    .sort((a, b) => (b.count - a.count))
+    .slice(0, 8);
+
+  totals.labs = labCounts.size;
+  totals.services = serviceCounts.size;
+  totals.provinces = provinceCounts.size;
+
+  const timelineMonths = buildTimelineMonths(monthCounts, 12);
 
   const timelineYears = Array.from(yearCounts.entries())
     .map(([year, count]) => ({ year, count }))
@@ -748,6 +845,8 @@ function computeDashboardMetrics(state, cases) {
     .map(([gene, count]) => ({ gene, count }))
     .sort((a, b) => (b.count - a.count))
     .slice(0, 10);
+
+  totals.uniqueGenes = topGenes.size;
 
   const yieldByStudy = studyDistribution.map((row) => {
     const studyCases = cases.filter((item) => item.studyType === row.name);
@@ -774,8 +873,10 @@ function computeDashboardMetrics(state, cases) {
     };
   });
 
-  const rareCases = cases.filter((item) => item.isRare || item.novelVariant).slice(0, 8);
-  const alerts = cases.filter((item) => item.notInGnomad || item.notInClinvar || item.novelVariant).slice(0, 8);
+  const rareCases = rareCasesPool.slice(0, 8);
+  const alerts = alertsPool.slice(0, 8);
+  totals.rareCandidates = rareCasesPool.length;
+  totals.activeAlerts = alertsPool.length;
 
   const heatmap = (() => {
     const groups = Array.from(new Set(cases.map((item) => item.groupId || 'otros')));
@@ -803,6 +904,10 @@ function computeDashboardMetrics(state, cases) {
     studyDistribution,
     resultDistribution,
     serviceDistribution,
+    labDistribution,
+    sexDistribution,
+    ageGroupDistribution,
+    provinceDistribution,
     timeline: { months: timelineMonths, years: timelineYears },
     topGenes: topGenesList,
     yieldByStudy,
@@ -993,8 +1098,8 @@ function generateResultsDraft(cases, metrics) {
   if (metrics.turnaround.derivationToResult) {
     lines.push(`El tiempo medio desde derivacion a resultado fue de ${metrics.turnaround.derivationToResult} dias (pedido a resultado: ${metrics.turnaround.requestToResult ?? 'sd'} dias).`);
   }
-  if (metrics.rareCases.length) {
-    lines.push(`Se identificaron ${metrics.rareCases.length} casos raros/variantes novedosas priorizadas para publicacion.`);
+  if (metrics.totals.rareCandidates) {
+    lines.push(`Se identificaron ${metrics.totals.rareCandidates} casos raros/variantes novedosas priorizadas para publicacion.`);
   }
   lines.push('', 'CONCLUSIONES', '', 'Los datos soportan la planificacion de cohortes especificas y priorizan la generacion de reportes cientificos en aquellas areas con mayor rendimiento diagnostico.');
   return lines.join('\n');
@@ -1049,7 +1154,7 @@ function AppToolbar({ title, onBack }) {
           <button
             type="button"
             onClick={onBack}
-            className="px-3 py-2 rounded-xl border border-white/40 text-white hover:bg-white/10 transition text-sm"
+            className="users-back-button px-3 py-2 rounded-xl border border-white/40 text-white hover:bg-white/10 transition text-sm"
           >
             ← Volver
           </button>
@@ -1102,26 +1207,38 @@ function DistributionList({ title, data, total, onExport }) {
         ) : null}
       </div>
       <div className="grid gap-2">
-        {data.map((row) => (
-          <div key={row.name || row.label} className="grid gap-1">
-            <div className="flex items-center justify-between text-xs text-slate-600">
-              <span className="truncate">{row.label || row.name}</span>
-              <span>{row.count}</span>
+        {data?.length
+          ? data.map((row) => (
+            <div key={row.name || row.label} className="grid gap-1">
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span className="truncate">{row.label || row.name}</span>
+                <span>{row.count}</span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-100">
+                <div
+                  className="h-2 rounded-full bg-slate-600"
+                  style={{ width: `${Math.max(6, (row.count / Math.max(total, 1)) * 100)}%` }}
+                />
+              </div>
             </div>
-            <div className="h-2 rounded-full bg-slate-100">
-              <div
-                className="h-2 rounded-full bg-slate-600"
-                style={{ width: `${Math.max(6, (row.count / Math.max(total, 1)) * 100)}%` }}
-              />
-            </div>
-          </div>
-        ))}
+          ))
+          : <span className="text-xs text-slate-500">Sin datos</span>}
       </div>
     </div>
   );
 }
 
 function TimelineSpark({ series }) {
+  if (!series?.length) {
+    return (
+      <div className="grid gap-1">
+        <span className="text-sm font-semibold text-slate-800">Pacientes por mes</span>
+        <span className="text-xs text-slate-500">Sin datos para el período seleccionado.</span>
+      </div>
+    );
+  }
+  const counts = series.map((row) => Number(row.count) || 0);
+  const maxCount = Math.max(...counts, 1);
   return (
     <div className="grid gap-1">
       <span className="text-sm font-semibold text-slate-800">Pacientes por mes</span>
@@ -1131,7 +1248,7 @@ function TimelineSpark({ series }) {
             key={row.month}
             title={`${row.month}: ${row.count}`}
             className="flex-1 bg-slate-200 rounded-sm"
-            style={{ height: `${Math.max(6, row.count * 8)}px` }}
+            style={{ height: `${Math.max(6, Math.round((row.count / maxCount) * 60) + 4)}px` }}
           />
         ))}
       </div>
@@ -1143,7 +1260,38 @@ function TimelineSpark({ series }) {
   );
 }
 function DashboardSection({ metrics, logAudit }) {
-  const totalStudies = metrics.totals.studies || 1;
+  const totalStudies = metrics.totals.studies || 0;
+  const totalPatients = metrics.totals.patients || 0;
+  const summaryCards = [
+    { key: 'patients', label: 'Pacientes', value: formatNumber(metrics.totals.patients), hint: 'Únicos' },
+    { key: 'studies', label: 'Estudios', value: formatNumber(metrics.totals.studies), hint: 'Registrados' },
+    { key: 'families', label: 'Familias', value: formatNumber(metrics.totals.families), hint: 'Activas en registro' },
+    { key: 'genes', label: 'Genes únicos', value: formatNumber(metrics.totals.uniqueGenes), hint: 'Genes con hallazgos' },
+    {
+      key: 'confirmed',
+      label: 'Dx confirmados',
+      value: formatNumber(metrics.totals.confirmedPatients),
+      hint: formatPercent(metrics.totals.confirmedPatients, totalPatients),
+    },
+    {
+      key: 'suspected',
+      label: 'Sospecha monogénica',
+      value: formatNumber(metrics.totals.suspectedPatients),
+      hint: formatPercent(metrics.totals.suspectedPatients, totalPatients),
+    },
+    {
+      key: 'pending',
+      label: 'Pendientes',
+      value: formatNumber(metrics.totals.pendingPatients),
+      hint: formatPercent(metrics.totals.pendingPatients, totalPatients),
+    },
+    {
+      key: 'alerts',
+      label: 'Alertas científicas',
+      value: formatNumber(metrics.totals.activeAlerts),
+      hint: `${formatNumber(metrics.totals.rareCandidates)} casos raros`,
+    },
+  ];
   return (
     <SectionCard
       title="Dashboard general"
@@ -1161,16 +1309,16 @@ function DashboardSection({ metrics, logAudit }) {
     >
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-5">
         <div className="grid gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <MetricCard label="Pacientes" value={formatNumber(metrics.totals.patients)} hint="Únicos" />
-            <MetricCard label="Estudios" value={formatNumber(metrics.totals.studies)} hint="Registrados" />
-            <MetricCard label="Familias" value={formatNumber(metrics.totals.families)} hint="Activas en registro" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {summaryCards.map((card) => (
+              <MetricCard key={card.key} label={card.label} value={card.value} hint={card.hint} />
+            ))}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <DistributionList
               title="Diagnóstico clínico"
               data={metrics.diagnosisStatus}
-              total={metrics.totals.patients}
+              total={totalPatients}
             />
             <DistributionList
               title="Resultados por clasificación"
@@ -1191,6 +1339,24 @@ function DashboardSection({ metrics, logAudit }) {
               total={totalStudies}
             />
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <DistributionList
+              title="Distribución por sexo"
+              data={metrics.sexDistribution}
+              total={totalPatients}
+            />
+            <DistributionList
+              title="Grupos etarios"
+              data={metrics.ageGroupDistribution}
+              total={totalPatients}
+            />
+          </div>
+          <DistributionList
+            title="Cobertura federal (Top 8)"
+            data={metrics.provinceDistribution}
+            total={totalPatients}
+            onExport={() => exportDistributionSvg(metrics.provinceDistribution, 'Cobertura federal', logAudit)}
+          />
         </div>
         <div className="grid gap-4">
           <TimelineSpark series={metrics.timeline.months} />
@@ -1213,6 +1379,12 @@ function DashboardSection({ metrics, logAudit }) {
             title="Tipos de estudio"
             data={metrics.studyDistribution.slice(0, 6)}
             total={totalStudies}
+          />
+          <DistributionList
+            title="Laboratorios activos (Top 6)"
+            data={metrics.labDistribution}
+            total={totalStudies}
+            onExport={() => exportDistributionSvg(metrics.labDistribution, 'Laboratorios activos', logAudit)}
           />
         </div>
       </div>

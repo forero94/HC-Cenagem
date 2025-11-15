@@ -19,6 +19,7 @@ const client_1 = require("@prisma/client");
 const _common_1 = require("../../../../../dist/libs/common/index");
 const audit_service_1 = require("../audit/audit.service");
 const create_user_dto_1 = require("./dto/create-user.dto");
+const update_user_dto_1 = require("./dto/update-user.dto");
 const update_user_roles_dto_1 = require("./dto/update-user-roles.dto");
 const update_user_status_dto_1 = require("./dto/update-user-status.dto");
 const users_service_1 = require("./users.service");
@@ -47,6 +48,17 @@ let UsersController = class UsersController {
         });
         return this.toResponse(user);
     }
+    async updateUser(userId, payload, actor) {
+        const updated = await this.usersService.updateUser(userId, payload);
+        const changedFields = Object.entries(payload)
+            .filter(([, value]) => typeof value !== 'undefined')
+            .map(([key]) => key);
+        await this.auditService.log(actor.userId, 'user.update', 'user', updated.id, {
+            fields: changedFields.filter((field) => field !== 'password'),
+            passwordReset: payload.password ? true : undefined,
+        });
+        return this.toResponse(updated);
+    }
     async updateStatus(userId, payload, actor) {
         const user = await this.usersService.updateStatus(userId, payload.status);
         await this.auditService.log(actor.userId, 'user.updateStatus', 'user', user.id, {
@@ -61,6 +73,14 @@ let UsersController = class UsersController {
         });
         return this.toResponse(user);
     }
+    async deleteUser(userId, actor) {
+        if (userId === actor.userId) {
+            throw new common_1.BadRequestException('No podés eliminar tu propia cuenta activa.');
+        }
+        await this.usersService.deleteUser(userId);
+        await this.auditService.log(actor.userId, 'user.delete', 'user', userId);
+        return { success: true };
+    }
     toResponse(user) {
         const roleRelations = user.roles;
         const roleNames = roleRelations.map((relation) => relation.role.name);
@@ -74,6 +94,7 @@ let UsersController = class UsersController {
             email: user.email,
             firstName: user.firstName,
             lastName: user.lastName,
+            documentNumber: user.documentNumber ?? null,
             displayName: computedDisplayName || user.email,
             primaryRole: roleNames[0] ?? null,
             status: user.status,
@@ -111,6 +132,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "createUser", null);
 __decorate([
+    (0, common_1.Patch)(':id'),
+    (0, _common_1.Permissions)(client_1.Permission.USERS_MANAGE),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, _common_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, update_user_dto_1.UpdateUserDto, Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "updateUser", null);
+__decorate([
     (0, common_1.Patch)(':id/status'),
     (0, _common_1.Permissions)(client_1.Permission.USERS_MANAGE),
     __param(0, (0, common_1.Param)('id')),
@@ -130,6 +161,15 @@ __decorate([
     __metadata("design:paramtypes", [String, update_user_roles_dto_1.UpdateUserRolesDto, Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "updateRoles", null);
+__decorate([
+    (0, common_1.Delete)(':id'),
+    (0, _common_1.Permissions)(client_1.Permission.USERS_MANAGE),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, _common_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "deleteUser", null);
 exports.UsersController = UsersController = __decorate([
     (0, swagger_1.ApiTags)('users'),
     (0, swagger_1.ApiBearerAuth)(),

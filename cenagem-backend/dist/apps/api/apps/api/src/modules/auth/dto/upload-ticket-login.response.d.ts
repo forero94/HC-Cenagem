@@ -7,6 +7,7 @@ declare class UploadTicketUserDto {
     displayName: string;
     primaryRole: string | null;
     licenseNumber: string | null;
+    documentNumber: string | null;
     scope: 'upload-ticket';
 }
 declare class UploadTicketMemberDto {

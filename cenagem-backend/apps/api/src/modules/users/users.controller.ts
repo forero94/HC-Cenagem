@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -13,6 +15,7 @@ import { CurrentUser, Permissions } from '@common';
 import type { ActiveUserData } from '@common';
 import { AuditService } from '../audit/audit.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UserWithRoles, UsersService } from './users.service';
@@ -56,6 +59,32 @@ export class UsersController {
       roles: user.roles.map((relation) => relation.role.name),
     });
     return this.toResponse(user);
+  }
+
+  @Patch(':id')
+  @Permissions(Permission.USERS_MANAGE)
+  async updateUser(
+    @Param('id') userId: string,
+    @Body() payload: UpdateUserDto,
+    @CurrentUser() actor: ActiveUserData,
+  ) {
+    const updated = await this.usersService.updateUser(userId, payload);
+    const changedFields = Object.entries(payload)
+      .filter(([, value]) => typeof value !== 'undefined')
+      .map(([key]) => key);
+
+    await this.auditService.log(
+      actor.userId,
+      'user.update',
+      'user',
+      updated.id,
+      {
+        fields: changedFields.filter((field) => field !== 'password'),
+        passwordReset: payload.password ? true : undefined,
+      },
+    );
+
+    return this.toResponse(updated);
   }
 
   @Patch(':id/status')
@@ -102,6 +131,22 @@ export class UsersController {
     return this.toResponse(user);
   }
 
+  @Delete(':id')
+  @Permissions(Permission.USERS_MANAGE)
+  async deleteUser(
+    @Param('id') userId: string,
+    @CurrentUser() actor: ActiveUserData,
+  ) {
+    if (userId === actor.userId) {
+      throw new BadRequestException(
+        'No podés eliminar tu propia cuenta activa.',
+      );
+    }
+    await this.usersService.deleteUser(userId);
+    await this.auditService.log(actor.userId, 'user.delete', 'user', userId);
+    return { success: true };
+  }
+
   private toResponse(user: UserWithRoles) {
     const roleRelations = user.roles;
     const roleNames = roleRelations.map((relation) => relation.role.name);
@@ -118,6 +163,7 @@ export class UsersController {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      documentNumber: user.documentNumber ?? null,
       displayName: computedDisplayName || user.email,
       primaryRole: roleNames[0] ?? null,
       status: user.status,

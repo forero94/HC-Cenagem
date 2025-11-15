@@ -1,7 +1,7 @@
 // ===============================
 // src/routes/FamilyDetail.jsx — Componentes internos para la vista de familia
 // ===============================
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import GeneticsPage from './GeneticsPage.jsx';
 import FamilyStudiesPage from './FamilyStudiesPage.jsx';
 import PhotosPage from './PhotosPage.jsx';
@@ -12,6 +12,12 @@ import AddMemberModal from './AddMemberModal.jsx';
 
 import { GROUP_GUIDES } from '@/components/NewCase/groupGuides.js';
 import { MOTIVO_CONSULTA_GROUPS } from '@/lib/motivosConsulta.js';
+import {
+  buildFamilyFullPrintHtml,
+  buildFamilyNewEvolutionsPrintHtml,
+  buildFamilySingleEvolutionPrintHtml,
+} from '@/modules/print/familyPrint.js';
+import { printHtmlDocument } from '@/lib/printTemplate.js';
 // ---- Utils ----
 const toDate = (s) => { try { return new Date(s); } catch { return null; } };
 const fmtDateTime = (d) => d ? `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}` : '—';
@@ -130,6 +136,85 @@ const formatYesNo = (value) => {
   const normalized = String(value).trim().toLowerCase();
   return YES_NO_LABELS[normalized] || value;
 };
+
+const TREE_CATEGORY = 'TREE';
+const PRINT_HISTORY_STORAGE_KEY = 'cenagem-hc-print-history-v1';
+
+const readPrintHistoryMap = () => {
+  if (typeof window === 'undefined' || !window || !window.localStorage) return {};
+  try {
+    const raw = window.localStorage.getItem(PRINT_HISTORY_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    console.warn('No se pudo leer el historial de impresión', error);
+    return {};
+  }
+};
+
+const writePrintHistoryMap = (map) => {
+  if (typeof window === 'undefined' || !window || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(PRINT_HISTORY_STORAGE_KEY, JSON.stringify(map));
+  } catch (error) {
+    console.warn('No se pudo guardar el historial de impresión', error);
+  }
+};
+
+const getFamilyPrintHistory = (familyId) => {
+  if (!familyId) return { lastFullPrintAt: null, lastEvolutionsPrintAt: null };
+  const map = readPrintHistoryMap();
+  return map[familyId] || { lastFullPrintAt: null, lastEvolutionsPrintAt: null };
+};
+
+const getEvolutionTimestamp = (evolution) => {
+  if (!evolution) return null;
+  const source = evolution.at || evolution.createdAt || evolution.updatedAt;
+  if (!source) return null;
+  const timestamp = new Date(source).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+};
+
+const getMemberLabel = (member) => {
+  if (!member) return 'Miembro sin identificar';
+  const initials = member.filiatorios?.iniciales || member.rol || '';
+  const fullName = [member.nombre, member.apellido].filter(Boolean).join(' ').trim();
+  const parts = [initials, fullName].filter(Boolean);
+  if (parts.length) return parts.join(' · ');
+  return member.id ? `Miembro ${member.id}` : 'Miembro sin identificar';
+};
+
+const blobToDataUrl = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('No se pudo convertir la imagen a base64'));
+    };
+    reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(blob);
+  });
+
+const attachmentToDataUrl = async (attachment, downloadAttachment) => {
+  if (!attachment) return null;
+  if (attachment.base64Data) {
+    return `data:${attachment.contentType || 'image/*'};base64,${attachment.base64Data}`;
+  }
+  if (!downloadAttachment || !attachment.id) return null;
+  try {
+    const blob = await downloadAttachment(attachment.id);
+    return await blobToDataUrl(blob);
+  } catch (error) {
+    console.error('No se pudo descargar la imagen del árbol familiar para impresión', error);
+    return null;
+  }
+};
+
+
 
 const isPlainObject = (value) =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -504,7 +589,7 @@ function IntakeSection({ section }) {
 }
 // ---- UI locales ----
 
-function AppToolbar({ code, onBack }) {
+function AppToolbar({ code, onBack, actions }) {
   return (
     <div className="mb-4 text-white">
       <div className="flex items-center justify-between">
@@ -515,9 +600,161 @@ function AppToolbar({ code, onBack }) {
           >
             ← Volver
           </button>
-          <h2 className="text-lg font-semibold text-white">HC {code}</h2>
+          <h2 className="text-lg font-semibold text-white">HC {code || '—'}</h2>
         </div>
+        <div className="flex items-center gap-2">{actions}</div>
       </div>
+    </div>
+  );
+}
+
+function PrintMenu({
+  onPrintSummary,
+  onPrintSingleEvolution,
+  onPrintMultipleEvolutions,
+  evolutionOptions = [],
+  printingMode,
+  lastPrintLabel,
+}) {
+  const [open, setOpen] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [selectedEvolutionIds, setSelectedEvolutionIds] = useState([]);
+  const menuRef = useRef(null);
+  const busy = Boolean(printingMode);
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const handleClick = (event) => {
+      if (!menuRef.current || menuRef.current.contains(event.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setShowPicker(false);
+      setSelectedEvolutionIds([]);
+    }
+  }, [open]);
+
+  const toggleMenu = () => {
+    if (busy) return;
+    setOpen((prev) => !prev);
+  };
+
+  const handlePrint = (action) => {
+    setOpen(false);
+    setShowPicker(false);
+    setSelectedEvolutionIds([]);
+    if (typeof action === 'function') {
+      action();
+    }
+  };
+
+  const toggleEvolution = (evolutionId) => {
+    setSelectedEvolutionIds((prev) => {
+      if (prev.includes(evolutionId)) {
+        return prev.filter((id) => id !== evolutionId);
+      }
+      return [...prev, evolutionId];
+    });
+  };
+
+  const handleSingleEvolutionPrint = (evolutionId) => {
+    if (!evolutionId) return;
+    handlePrint(() => onPrintSingleEvolution(evolutionId));
+  };
+
+  const handleMultipleEvolutionsPrint = () => {
+    if (!selectedEvolutionIds.length) return;
+    const ids = [...selectedEvolutionIds];
+    handlePrint(() => onPrintMultipleEvolutions(ids));
+  };
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        type="button"
+        onClick={toggleMenu}
+        disabled={busy}
+        className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/10 text-sm font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-70 disabled:text-white !text-white"
+      >
+        {busy ? 'Preparando…' : '🖨️ Imprimir'}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-3 text-slate-700 shadow-xl z-20">
+          <div className="text-sm text-slate-500">
+            Última impresión registrada: <span className="font-medium">{lastPrintLabel}</span>
+          </div>
+          <div className="mt-3 grid gap-2 text-sm">
+            <button
+              type="button"
+              onClick={() => handlePrint(onPrintSummary)}
+              disabled={busy}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              Historia de apertura
+            </button>
+            <div className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
+              <button
+                type="button"
+                onClick={() => setShowPicker((prev) => !prev)}
+                disabled={busy || !evolutionOptions.length}
+                className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                Elegir evolución{evolutionOptions.length > 1 ? ' (varias)' : ''}
+              </button>
+              {showPicker && (
+                <div className="mt-2 grid gap-2 text-sm text-slate-600">
+                  <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 text-sm">
+                    {evolutionOptions.map((option) => (
+                      <label
+                        key={option.id}
+                        className="flex items-start gap-2 border-b border-slate-100 px-3 py-2 text-slate-700 last:border-b-0 hover:bg-slate-50 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                          checked={selectedEvolutionIds.includes(option.id)}
+                          onChange={() => toggleEvolution(option.id)}
+                        />
+                        <span className="text-left">
+                          <span className="block font-semibold text-xs uppercase tracking-wide text-slate-500">
+                            {option.memberLabel}
+                          </span>
+                          <span className="block text-sm text-slate-700">{option.dateLabel}</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="ml-auto text-xs text-slate-500 underline hover:text-slate-900"
+                          onClick={() => handleSingleEvolutionPrint(option.id)}
+                        >
+                          Solo esta
+                        </button>
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleMultipleEvolutionsPrint}
+                    disabled={!selectedEvolutionIds.length || busy}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    Imprimir seleccionadas ({selectedEvolutionIds.length})
+                  </button>
+                </div>
+              )}
+              {!evolutionOptions.length && (
+                <p className="mt-2 text-sm text-slate-500">
+                  No hay evoluciones para imprimir aún.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1098,6 +1335,8 @@ function FamilyDetail({
   members,
   evolutions,
   studies = [],
+  attachments = [],
+  downloadAttachment,
   onBack,
   onAddEvolution,
   onCreateMember,
@@ -1112,6 +1351,8 @@ function FamilyDetail({
   const [evolutionText, setEvolutionText] = useState('');
   const [evolutionFilterMemberId, setEvolutionFilterMemberId] = useState('all');
   const canAddEvolution = Boolean(onAddEvolution && members.length);
+  const [printHistory, setPrintHistory] = useState(() => getFamilyPrintHistory(family?.id));
+  const [printMode, setPrintMode] = useState(null);
 
   useEffect(() => {
     if (!members.length) {
@@ -1135,6 +1376,29 @@ function FamilyDetail({
       setEvolutionText('');
     }
   }, [showEvolutionForm]);
+
+  useEffect(() => {
+    setPrintHistory(getFamilyPrintHistory(family?.id));
+  }, [family?.id]);
+
+  const persistPrintHistory = useCallback(
+    (updater) => {
+      if (!family?.id) return;
+      setPrintHistory((prevState) => {
+        const prev = prevState || { lastFullPrintAt: null, lastEvolutionsPrintAt: null };
+        const nextState = typeof updater === 'function' ? updater(prev) : updater || {};
+        const safeNext = {
+          lastFullPrintAt: nextState.lastFullPrintAt || null,
+          lastEvolutionsPrintAt: nextState.lastEvolutionsPrintAt || null,
+        };
+        const map = readPrintHistoryMap();
+        map[family.id] = safeNext;
+        writePrintHistoryMap(map);
+        return safeNext;
+      });
+    },
+    [family?.id],
+  );
 
   const handleEvolutionSubmit = () => {
     if (!onAddEvolution || !selectedMemberId) return;
@@ -1256,6 +1520,65 @@ function FamilyDetail({
       : familyEvolutionsAll.filter((e) => e.memberId === evolutionFilterMemberId)
   ), [familyEvolutionsAll, evolutionFilterMemberId]);
 
+  const orderedEvolutionsAsc = useMemo(() => {
+    if (!familyEvolutionsAll.length) return [];
+    return [...familyEvolutionsAll].sort((a, b) => {
+      const timeA = getEvolutionTimestamp(a) || 0;
+      const timeB = getEvolutionTimestamp(b) || 0;
+      return timeA - timeB;
+    });
+  }, [familyEvolutionsAll]);
+
+  const printableEvolutions = useMemo(
+    () => orderedEvolutionsAsc.map((evolution) => ({
+      id: evolution.id,
+      memberLabel: getMemberLabel(memberById.get(evolution.memberId)),
+      texto: evolution.texto || '',
+      author: evolution.author || 'sin autor',
+      at: evolution.at || evolution.createdAt || evolution.updatedAt || '',
+      timestamp: getEvolutionTimestamp(evolution),
+    })),
+    [orderedEvolutionsAsc, memberById],
+  );
+
+  const lastPrintTimestamp = useMemo(() => {
+    if (!printHistory) return null;
+    const timestamps = [printHistory.lastFullPrintAt, printHistory.lastEvolutionsPrintAt]
+      .map((value) => {
+        if (!value) return null;
+        const ts = new Date(value).getTime();
+        return Number.isFinite(ts) ? ts : null;
+      })
+      .filter((value) => typeof value === 'number');
+    if (!timestamps.length) return null;
+    return Math.max(...timestamps);
+  }, [printHistory]);
+
+  const firstEvolutionForPrint = useMemo(() => {
+    if (!printableEvolutions.length) return null;
+    const [first] = printableEvolutions;
+    const { timestamp, ...rest } = first || {};
+    return rest || null;
+  }, [printableEvolutions]);
+
+  const treeAttachments = useMemo(
+    () => (Array.isArray(attachments) ? attachments : []).filter(
+      (attachment) =>
+        attachment.category === TREE_CATEGORY
+        && (!family?.id || attachment.familyId === family.id),
+    ),
+    [attachments, family?.id],
+  );
+
+  const latestTreeAttachment = useMemo(() => {
+    if (!treeAttachments.length) return null;
+    return [...treeAttachments].sort((a, b) => {
+      const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    })[0];
+  }, [treeAttachments]);
+
   const resumenText = useMemo(() => {
     const motivo = a1?.diagnostico || '—';
     const est = geneticsSummary || '—';
@@ -1286,9 +1609,138 @@ function FamilyDetail({
     [intakeData, family],
   );
 
+  const lastPrintLabel = useMemo(
+    () => (lastPrintTimestamp ? new Date(lastPrintTimestamp).toLocaleString('es-AR') : 'Nunca'),
+    [lastPrintTimestamp],
+  );
+
+  const evolutionPickerOptions = useMemo(() => (
+    printableEvolutions.map((evolution) => {
+      const datetimeLabel = evolution.at
+        ? fmtDateTime(new Date(evolution.at))
+        : 'Sin fecha';
+      return {
+        id: evolution.id,
+        memberLabel: evolution.memberLabel || 'Miembro',
+        dateLabel: datetimeLabel,
+      };
+    })
+  ), [printableEvolutions]);
+
+  const handlePrintSummary = useCallback(async () => {
+    if (!family) return;
+    setPrintMode('full');
+    try {
+      const generatedAt = new Date().toISOString();
+      const treeImage = await attachmentToDataUrl(latestTreeAttachment, downloadAttachment);
+      let treeCaption = '';
+      if (latestTreeAttachment?.createdAt) {
+        treeCaption = `Foto cargada el ${new Date(latestTreeAttachment.createdAt).toLocaleString('es-AR')}`;
+      } else if (latestTreeAttachment?.description) {
+        treeCaption = latestTreeAttachment.description;
+      } else if (latestTreeAttachment?.fileName) {
+        treeCaption = latestTreeAttachment.fileName;
+      }
+      const html = buildFamilyFullPrintHtml({
+        family,
+        sections: intakeSections,
+        treeImage,
+        treeCaption,
+        firstEvolution: firstEvolutionForPrint,
+        generatedAt,
+      });
+      const success = await printHtmlDocument(html);
+      if (success) {
+        persistPrintHistory((prev = {}) => ({
+          ...prev,
+          lastFullPrintAt: generatedAt,
+        }));
+      }
+    } catch (error) {
+      console.error('No se pudo imprimir la historia completa', error);
+    } finally {
+      setPrintMode(null);
+    }
+  }, [
+    family,
+    intakeSections,
+    firstEvolutionForPrint,
+    latestTreeAttachment,
+    downloadAttachment,
+    persistPrintHistory,
+  ]);
+
+  const handlePrintSpecificEvolution = useCallback(async (evolutionId) => {
+    if (!family || !evolutionId) return;
+    const targetEvolution = printableEvolutions.find((evolution) => evolution.id === evolutionId);
+    if (!targetEvolution) return;
+    setPrintMode('single');
+    try {
+      const generatedAt = new Date().toISOString();
+      const html = buildFamilySingleEvolutionPrintHtml({
+        family,
+        evolution: targetEvolution,
+        generatedAt,
+      });
+      const success = await printHtmlDocument(html);
+      if (success) {
+        persistPrintHistory((prev = {}) => ({
+          ...prev,
+          lastEvolutionsPrintAt: generatedAt,
+        }));
+      }
+    } catch (error) {
+      console.error('No se pudo imprimir la evolución seleccionada', error);
+    } finally {
+      setPrintMode(null);
+    }
+  }, [family, printableEvolutions, persistPrintHistory]);
+
+  const handlePrintSelectedEvolutions = useCallback(async (selectedIds) => {
+    if (!family || !Array.isArray(selectedIds) || !selectedIds.length) return;
+    const evolutionsToPrint = printableEvolutions
+      .filter((evolution) => selectedIds.includes(evolution.id))
+      .map(({ timestamp, ...rest }) => rest);
+    if (!evolutionsToPrint.length) return;
+    setPrintMode('multiple');
+    try {
+      const generatedAt = new Date().toISOString();
+      const html = buildFamilyNewEvolutionsPrintHtml({
+        family,
+        evolutions: evolutionsToPrint,
+        sinceDate: null,
+        generatedAt,
+      });
+      const success = await printHtmlDocument(html);
+      if (success) {
+        persistPrintHistory((prev = {}) => ({
+          ...prev,
+          lastEvolutionsPrintAt: generatedAt,
+        }));
+      }
+    } catch (error) {
+      console.error('No se pudo imprimir las evoluciones seleccionadas', error);
+    } finally {
+      setPrintMode(null);
+    }
+  }, [family, printableEvolutions, persistPrintHistory]);
+
   return (
     <div className="grid gap-4">
-      <AppToolbar code={family.code} onBack={onBack} />
+      <AppToolbar
+        code={family.code}
+        onBack={onBack}
+        actions={(
+          <PrintMenu
+            onPrintSummary={handlePrintSummary}
+            onPrintSingleEvolution={handlePrintSpecificEvolution}
+            onPrintMultipleEvolutions={handlePrintSelectedEvolutions}
+            evolutionOptions={evolutionPickerOptions}
+            printingMode={printMode}
+            lastPrintLabel={lastPrintLabel}
+          />
+        )}
+      />
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mt-0 flex flex-wrap items-center justify-between gap-2 text-sm">

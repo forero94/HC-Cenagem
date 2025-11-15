@@ -1,6 +1,7 @@
 import type { ActiveUserData } from '@common';
 import { AuditService } from '../audit/audit.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UsersService } from './users.service';
@@ -13,6 +14,7 @@ export declare class UsersController {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
         displayName: string;
         primaryRole: string;
         status: import(".prisma/client").$Enums.UserStatus;
@@ -28,6 +30,7 @@ export declare class UsersController {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
         displayName: string;
         primaryRole: string;
         status: import(".prisma/client").$Enums.UserStatus;
@@ -43,6 +46,23 @@ export declare class UsersController {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
+        displayName: string;
+        primaryRole: string;
+        status: import(".prisma/client").$Enums.UserStatus;
+        roles: string[];
+        permissions: import(".prisma/client").$Enums.Permission[];
+        licenseNumber: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        lastLoginAt: Date | null;
+    }>;
+    updateUser(userId: string, payload: UpdateUserDto, actor: ActiveUserData): Promise<{
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        documentNumber: string | null;
         displayName: string;
         primaryRole: string;
         status: import(".prisma/client").$Enums.UserStatus;
@@ -58,6 +78,7 @@ export declare class UsersController {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
         displayName: string;
         primaryRole: string;
         status: import(".prisma/client").$Enums.UserStatus;
@@ -73,6 +94,7 @@ export declare class UsersController {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
         displayName: string;
         primaryRole: string;
         status: import(".prisma/client").$Enums.UserStatus;
@@ -82,6 +104,9 @@ export declare class UsersController {
         createdAt: Date;
         updatedAt: Date;
         lastLoginAt: Date | null;
+    }>;
+    deleteUser(userId: string, actor: ActiveUserData): Promise<{
+        success: boolean;
     }>;
     private toResponse;
 }

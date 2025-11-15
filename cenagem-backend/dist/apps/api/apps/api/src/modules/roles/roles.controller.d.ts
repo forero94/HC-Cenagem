@@ -14,6 +14,7 @@ export declare class RolesController {
         permissions: import(".prisma/client").$Enums.Permission[];
         updatedAt: Date;
         description: string | null;
+        requiresLicense: boolean;
     }[]>;
     createRole(payload: CreateRoleDto, actor: ActiveUserData): Promise<{
         id: string;
@@ -22,6 +23,7 @@ export declare class RolesController {
         permissions: import(".prisma/client").$Enums.Permission[];
         updatedAt: Date;
         description: string | null;
+        requiresLicense: boolean;
     }>;
     updateRole(roleId: string, payload: UpdateRoleDto, actor: ActiveUserData): Promise<{
         id: string;
@@ -30,6 +32,7 @@ export declare class RolesController {
         permissions: import(".prisma/client").$Enums.Permission[];
         updatedAt: Date;
         description: string | null;
+        requiresLicense: boolean;
     }>;
     removeRole(roleId: string, actor: ActiveUserData): Promise<void>;
 }

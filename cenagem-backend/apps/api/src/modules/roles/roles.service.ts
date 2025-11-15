@@ -39,6 +39,7 @@ export class RolesService {
         name: input.name,
         description: input.description,
         permissions: input.permissions,
+        requiresLicense: input.requiresLicense ?? false,
       },
     });
   }
@@ -50,6 +51,9 @@ export class RolesService {
       }),
       ...(input.permissions !== undefined && {
         permissions: { set: input.permissions },
+      }),
+      ...(input.requiresLicense !== undefined && {
+        requiresLicense: input.requiresLicense,
       }),
     };
 

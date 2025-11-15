@@ -94,6 +94,7 @@ model User {
   passwordHash  String
   firstName     String
   lastName      String
+  documentNumber String?
   licenseNumber String?
   status        UserStatus   @default(ACTIVE)
   lastLoginAt   DateTime?
@@ -111,6 +112,7 @@ model Role {
   name        String       @unique
   description String?
   permissions Permission[]
+  requiresLicense Boolean   @default(false)
   users       UserRole[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt

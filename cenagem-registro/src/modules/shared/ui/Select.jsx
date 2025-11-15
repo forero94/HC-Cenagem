@@ -3,7 +3,9 @@ import React from 'react';
 export default React.forwardRef(function Select(
   { label, value, onChange, options=[], className='', ...rest }, ref
 ){
-  const opts = options.map(o => typeof o==='string' ? {label:o, value:o} : o);
+  const opts = options.map(o =>
+    typeof o === 'string' ? { label: o, value: o } : o,
+  );
   return (
     <label className="flex flex-col gap-1">
       {label && <span className="text-sm text-slate-700">{label}</span>}
@@ -15,7 +17,11 @@ export default React.forwardRef(function Select(
         {...rest}
       >
         <option value="">—</option>
-        {opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {opts.map((o) => (
+          <option key={o.value} value={o.value} disabled={Boolean(o.disabled)}>
+            {o.label}
+          </option>
+        ))}
       </select>
     </label>
   );

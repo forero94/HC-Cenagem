@@ -15,7 +15,7 @@ export declare class AttachmentsController {
     }>;
     create(body: CreateAttachmentDto, actor: ActiveUserData): Promise<import("./attachments.service").AttachmentDetailDto>;
     getById(attachmentId: string): Promise<import("./attachments.service").AttachmentDetailDto>;
-    download(attachmentId: string, res: Response): Promise<void>;
+    download(attachmentId: string, res: Response): Promise<Buffer>;
     update(attachmentId: string, body: UpdateAttachmentDto): Promise<import("./attachments.service").AttachmentDetailDto>;
     delete(attachmentId: string): Promise<{
         success: boolean;

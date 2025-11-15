@@ -4,8 +4,50 @@ import { cenagemApi } from '@/lib/apiClient';
 import { getUser } from '@/modules/auth/useAuth';
 import { useCenagemStore } from '@/store/cenagemStore';
 
-const TREE_CATEGORY = 'TREE'; // New category for tree photos
+const TREE_CATEGORY = 'TREE'; // Conceptual category for tree photos (not yet available in API)
+const TREE_ATTACHMENT_CATEGORY = 'PHOTO'; // Backend-allowed category used for uploads
+const TREE_ATTACHMENT_TAG = 'TREE_GALLERY';
+const TREE_ATTACHMENT_METADATA_KEY = 'treeGallery';
 const AUTO_REFRESH_INTERVAL_MS = 15_000;
+
+const ensureTreeAttachmentPayload = (payload = {}) => {
+  const normalizedTags = Array.isArray(payload.tags)
+    ? payload.tags.filter(Boolean)
+    : [];
+  const hasTreeTag = normalizedTags.some(
+    (tag) => typeof tag === 'string' && tag.toUpperCase() === TREE_ATTACHMENT_TAG,
+  );
+  const tags = hasTreeTag ? normalizedTags : [...normalizedTags, TREE_ATTACHMENT_TAG];
+
+  return {
+    ...payload,
+    category: TREE_ATTACHMENT_CATEGORY,
+    tags,
+    metadata: {
+      ...(payload.metadata || {}),
+      [TREE_ATTACHMENT_METADATA_KEY]: true,
+    },
+  };
+};
+
+const isTreeAttachment = (attachment) => {
+  if (!attachment) return false;
+  if (attachment.category === TREE_CATEGORY) {
+    return true;
+  }
+  if (attachment.category !== TREE_ATTACHMENT_CATEGORY) {
+    return false;
+  }
+  if (attachment.metadata?.[TREE_ATTACHMENT_METADATA_KEY]) {
+    return true;
+  }
+  if (!Array.isArray(attachment.tags)) {
+    return false;
+  }
+  return attachment.tags.some(
+    (tag) => typeof tag === 'string' && tag.toUpperCase() === TREE_ATTACHMENT_TAG,
+  );
+};
 
 // --- Image compression utilities (copied from PhotosPage.jsx) ---
 const MAX_IMAGE_BYTES = 2.5 * 1024 * 1024; // 2.5 MB límite objetivo por imagen
@@ -275,13 +317,15 @@ function UploadTicketMode({ ticketContext }) {
       for (const file of collection) {
         try {
           const base64Data = await fileToBase64(file);
-          await cenagemApi.createFamilyAttachment(ticketContext.familyId, {
-            category: TREE_CATEGORY,
-            fileName: file.name,
-            contentType: file.type || 'image/jpeg',
-            base64Data,
-            description: file.name,
-          });
+          await cenagemApi.createFamilyAttachment(
+            ticketContext.familyId,
+            ensureTreeAttachmentPayload({
+              fileName: file.name,
+              contentType: file.type || 'image/jpeg',
+              base64Data,
+              description: file.name,
+            }),
+          );
           setRecentUploads((prev) =>
             [{ name: file.name, at: new Date().toISOString() }, ...prev].slice(0, 5),
           );
@@ -450,8 +494,7 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
   const treePhotos = useMemo(
     () =>
       state.attachments.filter(
-        (attachment) =>
-          attachment.familyId === familyId && attachment.category === TREE_CATEGORY,
+        (attachment) => attachment.familyId === familyId && isTreeAttachment(attachment),
       ),
     [state.attachments, familyId],
   );
@@ -550,9 +593,7 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
 
     try {
       // For tree photos, the upload ticket is associated with the family, not a specific member
-      const response = await cenagemApi.createUploadTicket(familyId, {
-        category: TREE_CATEGORY,
-      });
+      const response = await cenagemApi.createUploadTicket(familyId);
       setTicketInfo(response);
     } catch (error) {
       console.error('No se pudo generar el ticket de carga para el árbol familiar', error);
@@ -643,11 +684,13 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
     let hasChanges = false;
     for (const file of fileList) {
       try {
-        const attachment = await createAttachment(familyId, {
-          category: TREE_CATEGORY,
-          description: file.name,
-          file,
-        });
+        const attachment = await createAttachment(
+          familyId,
+          ensureTreeAttachmentPayload({
+            description: file.name,
+            file,
+          }),
+        );
         if (attachment?.id) {
           const url = URL.createObjectURL(file);
           setPreviews((prev) => ({

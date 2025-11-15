@@ -1,6 +1,7 @@
 import { Prisma, UserStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 export type UserWithRoles = Prisma.UserGetPayload<{
     include: {
         roles: {
@@ -23,6 +24,7 @@ export declare class UsersService {
                 permissions: import(".prisma/client").$Enums.Permission[];
                 updatedAt: Date;
                 description: string | null;
+                requiresLicense: boolean;
             };
         } & {
             userId: string;
@@ -36,6 +38,7 @@ export declare class UsersService {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
         licenseNumber: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
         passwordHash: string;
@@ -51,6 +54,7 @@ export declare class UsersService {
                 permissions: import(".prisma/client").$Enums.Permission[];
                 updatedAt: Date;
                 description: string | null;
+                requiresLicense: boolean;
             };
         } & {
             userId: string;
@@ -64,6 +68,7 @@ export declare class UsersService {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
         licenseNumber: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
         passwordHash: string;
@@ -79,6 +84,7 @@ export declare class UsersService {
                 permissions: import(".prisma/client").$Enums.Permission[];
                 updatedAt: Date;
                 description: string | null;
+                requiresLicense: boolean;
             };
         } & {
             userId: string;
@@ -92,6 +98,7 @@ export declare class UsersService {
         email: string;
         firstName: string;
         lastName: string;
+        documentNumber: string | null;
         licenseNumber: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
         passwordHash: string;
@@ -102,5 +109,7 @@ export declare class UsersService {
     createUser(input: CreateUserDto, actorId: string | null): Promise<UserWithRoles>;
     updateStatus(userId: string, status: UserStatus): Promise<UserWithRoles>;
     setUserRoles(userId: string, roleNames: string[], actorId: string | null): Promise<UserWithRoles>;
+    updateUser(userId: string, input: UpdateUserDto): Promise<UserWithRoles>;
+    deleteUser(userId: string): Promise<void>;
     updateLastLogin(userId: string): Promise<void>;
 }

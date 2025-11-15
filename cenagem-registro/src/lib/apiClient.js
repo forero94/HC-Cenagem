@@ -272,6 +272,12 @@ export const cenagemApi = {
       body: JSON.stringify(payload),
     });
   },
+  updateUser(userId, payload) {
+    return request(`/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
   updateUserStatus(userId, status) {
     return request(`/users/${userId}/status`, {
       method: 'PATCH',
@@ -282,6 +288,11 @@ export const cenagemApi = {
     return request(`/users/${userId}/roles`, {
       method: 'PATCH',
       body: JSON.stringify({ roles }),
+    });
+  },
+  deleteUser(userId) {
+    return request(`/users/${userId}`, {
+      method: 'DELETE',
     });
   },
   listRoles() {

@@ -23,13 +23,56 @@ const STATUS_BADGE = {
   INVITED: 'bg-amber-100 text-amber-800 border-amber-200',
 };
 
+const ROLE_TEMPLATES = [
+  {
+    name: 'admin',
+    description: 'Acceso completo a la plataforma.',
+    requiresLicense: false,
+  },
+  {
+    name: 'admision',
+    description: 'Gestión de admisiones y carga de casos.',
+    requiresLicense: false,
+  },
+  {
+    name: 'citogenetica',
+    description: 'Equipo de citogenética. Matrícula obligatoria.',
+    requiresLicense: true,
+  },
+  {
+    name: 'molecular',
+    description: 'Equipo de genética molecular. Matrícula obligatoria.',
+    requiresLicense: true,
+  },
+  {
+    name: 'medicos',
+    description: 'Equipo médico con control pleno de casos y catálogos.',
+    requiresLicense: true,
+  },
+  {
+    name: 'psicologia',
+    description: 'Equipo de psicología. Matrícula obligatoria.',
+    requiresLicense: true,
+  },
+];
+
 const EMPTY_FORM = {
   username: '',
   firstName: '',
   lastName: '',
+  documentNumber: '',
   password: '',
   licenseNumber: '',
-  roles: [],
+  role: '',
+};
+
+const EMPTY_EDIT_PROFILE = {
+  username: '',
+  firstName: '',
+  lastName: '',
+  documentNumber: '',
+  licenseNumber: '',
+  password: '',
 };
 
 const dateTimeFormatter = new Intl.DateTimeFormat('es-AR', {
@@ -58,6 +101,7 @@ function RoleCheckboxList({ availableRoles, selectedRoles, onToggle, disabled })
     <div className="flex flex-col gap-2">
       {availableRoles.map((role) => {
         const checked = selectedRoles.includes(role.name);
+        const roleDisabled = disabled || role.disabled;
         return (
           <label
             key={role.id ?? role.name}
@@ -65,19 +109,32 @@ function RoleCheckboxList({ availableRoles, selectedRoles, onToggle, disabled })
               checked
                 ? 'border-slate-900 bg-slate-100'
                 : 'border-slate-200 bg-white'
-            } ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-slate-400'}`}
+            } ${
+              roleDisabled
+                ? 'opacity-60 cursor-not-allowed'
+                : 'cursor-pointer hover:border-slate-400'
+            }`}
           >
             <input
               type="checkbox"
               className="mt-1"
               checked={checked}
               onChange={() => onToggle(role.name)}
-              disabled={disabled}
+              disabled={roleDisabled}
             />
             <div className="flex flex-col">
               <span className="font-semibold text-slate-900">{role.name}</span>
-              {role.description && (
-                <span className="text-xs text-slate-500">{role.description}</span>
+              {(role.description || role.requiresLicense) && (
+                <div className="flex flex-col gap-0.5 text-xs">
+                  {role.description && (
+                    <span className="text-slate-500">{role.description}</span>
+                  )}
+                  {role.requiresLicense && (
+                    <span className="font-semibold text-rose-600">
+                      Matrícula obligatoria
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </label>
@@ -111,10 +168,64 @@ export default function UsersPage({ user, onBack, onLogout }) {
   const [rolesMessage, setRolesMessage] = useState('');
   const [statusError, setStatusError] = useState('');
   const [rolesError, setRolesError] = useState('');
+  const [editProfile, setEditProfile] = useState(EMPTY_EDIT_PROFILE);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const licenseRequiredRoles = useMemo(
+    () =>
+      new Set(
+        roles
+          .filter(
+            (role) =>
+              role &&
+              typeof role.name === 'string' &&
+              role.requiresLicense,
+          )
+          .map((role) => role.name),
+      ),
+    [roles],
+  );
+
+  const selectedCreateRole = useMemo(
+    () => roles.find((role) => role.name === createForm.role) ?? null,
+    [roles, createForm.role],
+  );
+
+  const createNeedsLicense = useMemo(
+    () =>
+      createForm.role ? licenseRequiredRoles.has(createForm.role) : false,
+    [createForm.role, licenseRequiredRoles],
+  );
+
+  const editNeedsLicense = useMemo(
+    () =>
+      selectedUser
+        ? selectedUser.roles.some((roleName) =>
+            licenseRequiredRoles.has(roleName),
+          )
+        : false,
+    [selectedUser, licenseRequiredRoles],
+  );
+
+  const pendingRolesNeedLicense = useMemo(
+    () =>
+      editRoles.some((roleName) =>
+        licenseRequiredRoles.has(roleName),
+      ),
+    [editRoles, licenseRequiredRoles],
+  );
 
   const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
   const canViewUsers = permissions.includes('USERS_VIEW');
   const canManageUsers = permissions.includes('USERS_MANAGE');
+  const isOwnAccount = Boolean(selectedUser && user && selectedUser.id === user.id);
+  const handleOpenProfile = () => {
+    window.location.hash = '#/profile';
+  };
 
   const loadUsers = useCallback(async () => {
     if (!canViewUsers) {
@@ -131,7 +242,21 @@ export default function UsersPage({ user, onBack, onLogout }) {
         cenagemApi.listRoles(),
       ]);
       setUsers(Array.isArray(usersResponse) ? usersResponse : []);
-      setRoles(Array.isArray(rolesResponse) ? rolesResponse : []);
+      const normalizedRoles = Array.isArray(rolesResponse) ? rolesResponse : [];
+      const mergedRoles = ROLE_TEMPLATES.map((template) => {
+        const remote = normalizedRoles.find((role) => role.name === template.name);
+        return {
+          id: remote?.id ?? template.name,
+          name: template.name,
+          description: template.description ?? remote?.description ?? '',
+          requiresLicense:
+            typeof remote?.requiresLicense === 'boolean'
+              ? remote.requiresLicense || template.requiresLicense
+              : template.requiresLicense,
+          disabled: Boolean(remote?.disabled),
+        };
+      });
+      setRoles(mergedRoles);
     } catch (err) {
       setError(describeError(err, 'No se pudieron cargar los usuarios.'));
     } finally {
@@ -147,6 +272,12 @@ export default function UsersPage({ user, onBack, onLogout }) {
     if (!selectedUser) {
       setEditStatus('ACTIVE');
       setEditRoles([]);
+      setEditProfile(() => ({ ...EMPTY_EDIT_PROFILE }));
+      setProfileMessage('');
+      setProfileError('');
+      setDeleteError('');
+      setProfileSaving(false);
+      setDeleteLoading(false);
       return;
     }
     setEditStatus(selectedUser.status);
@@ -155,6 +286,19 @@ export default function UsersPage({ user, onBack, onLogout }) {
     setRolesMessage('');
     setStatusError('');
     setRolesError('');
+    setProfileMessage('');
+    setProfileError('');
+    setDeleteError('');
+    setEditProfile({
+      username: selectedUser.email ?? '',
+      firstName: selectedUser.firstName ?? '',
+      lastName: selectedUser.lastName ?? '',
+      documentNumber: selectedUser.documentNumber ?? '',
+      licenseNumber: selectedUser.licenseNumber ?? '',
+      password: '',
+    });
+    setProfileSaving(false);
+    setDeleteLoading(false);
   }, [selectedUser]);
 
   useEffect(() => {
@@ -170,24 +314,19 @@ export default function UsersPage({ user, onBack, onLogout }) {
     }));
   };
 
-  const toggleCreateRole = (roleName) => {
-    setCreateForm((prev) => {
-      const exists = prev.roles.includes(roleName);
-      return {
-        ...prev,
-        roles: exists
-          ? prev.roles.filter((role) => role !== roleName)
-          : [...prev.roles, roleName],
-      };
-    });
-  };
-
   const toggleEditRole = (roleName) => {
     setEditRoles((prev) =>
       prev.includes(roleName)
         ? prev.filter((role) => role !== roleName)
         : [...prev, roleName],
     );
+  };
+
+  const handleProfileChange = (field, value) => {
+    setEditProfile((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const handleCreateSubmit = async (event) => {
@@ -197,18 +336,38 @@ export default function UsersPage({ user, onBack, onLogout }) {
     setCreateError('');
     setCreateSuccess('');
 
+    const documentNumber = createForm.documentNumber.trim();
+    if (!documentNumber) {
+      setCreateError('Ingresá el DNI del usuario.');
+      return;
+    }
+
+    if (!createForm.role) {
+      setCreateError('Seleccioná un rol antes de crear la cuenta.');
+      return;
+    }
+
+    const trimmedLicense = createForm.licenseNumber.trim();
+    if (createNeedsLicense && !trimmedLicense) {
+      setCreateError(
+        'El rol elegido requiere cargar una matrícula profesional.',
+      );
+      return;
+    }
+
     const payload = {
       username: createForm.username.trim().toLowerCase(),
       password: createForm.password,
       firstName: createForm.firstName.trim(),
       lastName: createForm.lastName.trim(),
+      documentNumber,
     };
 
-    if (createForm.licenseNumber.trim()) {
-      payload.licenseNumber = createForm.licenseNumber.trim();
+    if (trimmedLicense) {
+      payload.licenseNumber = trimmedLicense;
     }
-    if (createForm.roles.length > 0) {
-      payload.roles = createForm.roles;
+    if (createForm.role) {
+      payload.roles = [createForm.role];
     }
 
     setCreatingUser(true);
@@ -222,6 +381,81 @@ export default function UsersPage({ user, onBack, onLogout }) {
       setCreateError(describeError(err, 'No se pudo crear el usuario.'));
     } finally {
       setCreatingUser(false);
+    }
+  };
+
+  const handleProfileSubmit = async (event) => {
+    event?.preventDefault?.();
+    if (!selectedUser || !canManageUsers) return;
+    setProfileError('');
+    setProfileMessage('');
+
+    const username = editProfile.username.trim().toLowerCase();
+    const firstName = editProfile.firstName.trim();
+    const lastName = editProfile.lastName.trim();
+    const documentNumber = editProfile.documentNumber.trim();
+    const licenseNumber = editProfile.licenseNumber.trim();
+
+    if (!username || !firstName || !lastName) {
+      setProfileError('Completá usuario, nombre y apellido antes de guardar.');
+      return;
+    }
+
+    if (!documentNumber) {
+      setProfileError('El DNI es obligatorio.');
+      return;
+    }
+
+    if (editNeedsLicense && !licenseNumber) {
+      setProfileError(
+        'Este usuario requiere una matrícula para los roles asignados.',
+      );
+      return;
+    }
+
+    const payload = {};
+    const currentUsername = (selectedUser.email ?? '').trim().toLowerCase();
+    if (username !== currentUsername) {
+      payload.username = username;
+    }
+    const currentFirstName = (selectedUser.firstName ?? '').trim();
+    if (firstName !== currentFirstName) {
+      payload.firstName = firstName;
+    }
+    const currentLastName = (selectedUser.lastName ?? '').trim();
+    if (lastName !== currentLastName) {
+      payload.lastName = lastName;
+    }
+    const currentDocument = (selectedUser.documentNumber ?? '').trim();
+    if (documentNumber !== currentDocument) {
+      payload.documentNumber = documentNumber;
+    }
+    const currentLicense = (selectedUser.licenseNumber ?? '').trim();
+    if (licenseNumber !== currentLicense) {
+      payload.licenseNumber = licenseNumber;
+    }
+    const passwordValue = editProfile.password.trim();
+    if (passwordValue) {
+      payload.password = passwordValue;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      setProfileError('No hay cambios para guardar.');
+      return;
+    }
+
+    setProfileSaving(true);
+    try {
+      const updated = await cenagemApi.updateUser(selectedUser.id, payload);
+      setUsers((prev) =>
+        prev.map((candidate) => (candidate.id === updated.id ? updated : candidate)),
+      );
+      setProfileMessage('Datos de la cuenta actualizados.');
+      setEditProfile((prev) => ({ ...prev, password: '' }));
+    } catch (err) {
+      setProfileError(describeError(err, 'No se pudieron guardar los cambios.'));
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -247,6 +481,17 @@ export default function UsersPage({ user, onBack, onLogout }) {
     if (!selectedUser || !canManageUsers || editRoles.length === 0) return;
     setRolesError('');
     setRolesMessage('');
+    if (pendingRolesNeedLicense) {
+      const hasLicense =
+        typeof selectedUser.licenseNumber === 'string' &&
+        selectedUser.licenseNumber.trim().length > 0;
+      if (!hasLicense) {
+        setRolesError(
+          'Asigná una matrícula al usuario antes de guardar estos roles.',
+        );
+        return;
+      }
+    }
     setRolesSaving(true);
     try {
       const updated = await cenagemApi.updateUserRoles(selectedUser.id, editRoles);
@@ -261,10 +506,39 @@ export default function UsersPage({ user, onBack, onLogout }) {
     }
   };
 
+  const handleDeleteUser = async () => {
+    if (!selectedUser || !canManageUsers || isOwnAccount) return;
+    const confirmationMessage = `¿Eliminar la cuenta de ${selectedUser.displayName ?? selectedUser.email}? Esta acción es permanente.`;
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(confirmationMessage);
+      if (!confirmed) {
+        return;
+      }
+    }
+    setDeleteError('');
+    setDeleteLoading(true);
+    try {
+      await cenagemApi.deleteUser(selectedUser.id);
+      setUsers((prev) =>
+        prev.filter((candidate) => candidate.id !== selectedUser.id),
+      );
+      setSelectedUserId(null);
+    } catch (err) {
+      setDeleteError(describeError(err, 'No se pudo eliminar el usuario.'));
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   if (!canViewUsers) {
     return (
       <div className="app-shell grid gap-4 p-6">
-        <HomeHeader title="Administración de usuarios" user={user} onLogout={onLogout} />
+        <HomeHeader
+          title="Administración de usuarios"
+          user={user}
+          onLogout={onLogout}
+          onProfileClick={handleOpenProfile}
+        />
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-800">
           <h2 className="text-lg font-semibold">No tenés acceso a esta sección</h2>
           <p className="mt-2 text-sm">
@@ -286,13 +560,18 @@ export default function UsersPage({ user, onBack, onLogout }) {
 
   return (
     <div className="app-shell grid gap-4 p-6">
-      <HomeHeader title="Administración de usuarios" user={user} onLogout={onLogout} />
+      <HomeHeader
+        title="Administración de usuarios"
+        user={user}
+        onLogout={onLogout}
+        onProfileClick={handleOpenProfile}
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           type="button"
           onClick={onBack}
-          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 transition"
+          className="users-back-button rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition"
         >
           ← Volver
         </button>
@@ -398,6 +677,30 @@ export default function UsersPage({ user, onBack, onLogout }) {
               Configurá una cuenta nueva para el equipo.
             </p>
             <form className="mt-4 grid gap-3" onSubmit={handleCreateSubmit}>
+              <Select
+                label="Rol"
+                value={createForm.role}
+                onChange={(event) => handleCreateChange('role', event.target.value)}
+                options={roles.map((role) => ({
+                  value: role.name,
+                  label: role.name,
+                  disabled: role.disabled,
+                }))}
+                disabled={!canManageUsers || !roles.length}
+                required
+              />
+              {selectedCreateRole && (
+                <div className="text-xs text-slate-500">
+                  {selectedCreateRole.description && (
+                    <p>{selectedCreateRole.description}</p>
+                  )}
+                  {selectedCreateRole.requiresLicense && (
+                    <p className="font-semibold text-rose-600">
+                      Matrícula obligatoria
+                    </p>
+                  )}
+                </div>
+              )}
               <TextInput
                 label="Usuario"
                 type="text"
@@ -424,6 +727,14 @@ export default function UsersPage({ user, onBack, onLogout }) {
                 />
               </div>
               <TextInput
+                label="DNI"
+                value={createForm.documentNumber}
+                onChange={(value) => handleCreateChange('documentNumber', value)}
+                placeholder="Sin puntos"
+                autoComplete="off"
+                required
+              />
+              <TextInput
                 label="Contraseña temporal"
                 type="password"
                 value={createForm.password}
@@ -433,21 +744,17 @@ export default function UsersPage({ user, onBack, onLogout }) {
                 required
               />
               <TextInput
-                label="Matrícula (opcional)"
+                label={
+                  createNeedsLicense
+                    ? 'Matrícula (obligatoria para el rol elegido)'
+                    : 'Matrícula (opcional)'
+                }
                 value={createForm.licenseNumber}
                 onChange={(value) => handleCreateChange('licenseNumber', value)}
                 placeholder="MN-0000"
                 autoComplete="off"
+                required={createNeedsLicense}
               />
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">Roles</span>
-                <RoleCheckboxList
-                  availableRoles={roles}
-                  selectedRoles={createForm.roles}
-                  onToggle={toggleCreateRole}
-                  disabled={!canManageUsers || !roles.length}
-                />
-              </div>
               {createError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
                   {createError}
@@ -487,7 +794,107 @@ export default function UsersPage({ user, onBack, onLogout }) {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-6 md:grid-cols-2">
+          <div className="mt-4 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            <form className="space-y-3" onSubmit={handleProfileSubmit}>
+              <h3 className="text-sm font-semibold text-slate-900">Datos de la cuenta</h3>
+              <TextInput
+                label="Usuario"
+                value={editProfile.username}
+                onChange={(value) => handleProfileChange('username', value)}
+                disabled={!canManageUsers}
+                required
+                autoComplete="username"
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextInput
+                  label="Nombre"
+                  value={editProfile.firstName}
+                  onChange={(value) => handleProfileChange('firstName', value)}
+                  disabled={!canManageUsers}
+                  required
+                  autoComplete="given-name"
+                />
+                <TextInput
+                  label="Apellido"
+                  value={editProfile.lastName}
+                  onChange={(value) => handleProfileChange('lastName', value)}
+                  disabled={!canManageUsers}
+                  required
+                  autoComplete="family-name"
+                />
+              </div>
+              <TextInput
+                label="DNI"
+                value={editProfile.documentNumber}
+                onChange={(value) => handleProfileChange('documentNumber', value)}
+                disabled={!canManageUsers}
+                required
+                autoComplete="off"
+              />
+              <TextInput
+                label={
+                  editNeedsLicense
+                    ? 'Matrícula (obligatoria para los roles asignados)'
+                    : 'Matrícula (opcional)'
+                }
+                value={editProfile.licenseNumber}
+                onChange={(value) => handleProfileChange('licenseNumber', value)}
+                disabled={!canManageUsers}
+                autoComplete="off"
+                required={editNeedsLicense}
+              />
+              <TextInput
+                label="Contraseña temporal (opcional)"
+                type="password"
+                value={editProfile.password}
+                onChange={(value) => handleProfileChange('password', value)}
+                disabled={!canManageUsers}
+                placeholder="Ingresá al menos 8 caracteres"
+                autoComplete="new-password"
+              />
+              <p className="text-xs text-slate-500">
+                Completá la contraseña solo si querés resetearla. De lo contrario, dejá el campo vacío.
+              </p>
+              {profileError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+                  {profileError}
+                </div>
+              )}
+              {profileMessage && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                  {profileMessage}
+                </div>
+              )}
+              <Button type="submit" disabled={!canManageUsers || profileSaving}>
+                {profileSaving ? 'Guardando…' : 'Guardar cambios'}
+              </Button>
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3">
+                <p className="text-sm font-semibold text-rose-700">Eliminar usuario</p>
+                <p className="mt-1 text-xs text-rose-600">
+                  Esta acción borra la cuenta y cierra todas las sesiones activas.
+                </p>
+                {deleteError && (
+                  <div className="mt-2 rounded-lg border border-rose-200 bg-white/80 px-3 py-2 text-xs text-rose-600">
+                    {deleteError}
+                  </div>
+                )}
+                {isOwnAccount && (
+                  <p className="mt-2 text-xs text-rose-600">
+                    No podés eliminar tu propia cuenta activa.
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3 border-rose-300 text-rose-700 hover:bg-rose-50"
+                  onClick={handleDeleteUser}
+                  disabled={!canManageUsers || deleteLoading || isOwnAccount}
+                >
+                  {deleteLoading ? 'Eliminando…' : 'Eliminar usuario'}
+                </Button>
+              </div>
+            </form>
+
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">Estado</h3>
               <Select

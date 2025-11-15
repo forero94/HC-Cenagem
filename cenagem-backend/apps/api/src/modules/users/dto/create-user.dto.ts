@@ -25,6 +25,12 @@ export class CreateUserDto {
   @IsString()
   lastName: string;
 
+  @IsString()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  documentNumber: string;
+
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()

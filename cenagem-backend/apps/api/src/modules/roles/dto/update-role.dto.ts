@@ -1,6 +1,7 @@
 import {
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -19,4 +20,8 @@ export class UpdateRoleDto {
   @IsEnum(Permission, { each: true })
   @IsOptional()
   permissions?: Permission[];
+
+  @IsBoolean()
+  @IsOptional()
+  requiresLicense?: boolean;
 }
