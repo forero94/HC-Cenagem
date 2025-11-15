@@ -79,25 +79,6 @@ a {
   color: var(--accent);
 }
 
-.btn {
-  @apply inline-flex items-center justify-center px-3 py-2 rounded-xl font-medium transition shadow-sm;
-}
-.btn-primary {
-  background: var(--accent);
-  color: #fff;
-}
-.btn-primary:hover {
-  background: var(--accent-strong);
-}
-.btn-outline {
-  border: 1px solid var(--border-soft);
-  color: var(--text-strong);
-  background: var(--surface-panel);
-}
-.btn-outline:hover {
-  background: var(--surface-soft);
-}
-
 .tabs { @apply flex gap-2 border-b border-transparent bg-transparent; }
 .tab { @apply px-3 py-2 text-sm font-medium transition rounded-t-xl; color: var(--text-muted); }
 .tab:hover { background: var(--surface-soft); color: var(--accent-strong); }
@@ -194,6 +175,25 @@ textarea::placeholder {
 
 
 @layer components {
+  .btn {
+    @apply inline-flex items-center justify-center px-3 py-2 rounded-xl font-medium transition shadow-sm;
+    color: #ffffff;
+  }
+  .btn-primary {
+    background: var(--accent);
+  }
+  .btn-primary:hover {
+    background: var(--accent-strong);
+  }
+  .btn-outline {
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    backdrop-filter: blur(4px);
+  }
+  .btn-outline:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
   .surface-primary {
     background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
     border: 1px solid var(--border-soft);

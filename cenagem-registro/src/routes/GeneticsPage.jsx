@@ -23,15 +23,71 @@ const yearsSince = (iso) => {
 };
 
 const GENETIC_DEFS = [
-  { key: 'Cariotipo', label: 'Cariotipo' },
-  { key: 'arrayCGH', label: 'array-CGH' },
-  { key: 'panelNGS', label: 'Panel NGS' },
-  { key: 'exoma', label: 'Exoma clínico' },
-  { key: 'genoma', label: 'Genoma completo' },
-  { key: 'mlpa', label: 'MLPA / Del-Dup' },
-  { key: 'brcaHrr', label: 'BRCA / HRR' },
-  { key: 'fragileX', label: 'X Frágil (FMR1)' },
+  { key: 'fragilidadCromosomaX', label: 'Fragilidad del cromosoma X' },
+  { key: 'hiperplasiaSuprarrenal', label: 'Hiperplasia suprarrenal congénita' },
+  { key: 'distrofiaSteinert', label: 'Distrofia miotónica de Steinert' },
+  { key: 'ataxiaFriedreich', label: 'Ataxia de Friedreich' },
+  { key: 'mlpaSubtelomericas', label: 'MLPA regiones subteloméricas', group: 'mlpa' },
+  { key: 'mlpaCentromericas', label: 'MLPA regiones centroméricas', group: 'mlpa' },
+  {
+    key: 'mlpaTrastornosRecurrentes',
+    label: 'MLPA trastornos genómicos recurrentes',
+    group: 'mlpa',
+    description:
+      'Incluye deleción 1p36, microdeleciones 2p16, 2q33/MBD5, 2q33/SATB2, 3q29, 9q22.3, 15q24, 17q21, 22q13/Phelan-McDermid, Cri du Chat (5p15), DiGeorge/duplicación 22q11, región 10p15, Langer-Giedion 8q, Miller-Dieker 17p, NF1, Prader-Willi/Angelman, MECP2 duplicación Xq28, Rubinstein-Taybi, Smith-Magenis, Sotos 5q35.3, Williams y Wolf-Hirschhorn 4p16.3.',
+  },
+  { key: 'mlpaLigadasX', label: 'MLPA ligadas al X', group: 'mlpa' },
+  { key: 'mlpaSmeDiGeorge', label: 'MLPA SME DiGeorge', group: 'mlpa' },
+  { key: 'mlpaEpilepsias', label: 'MLPA epilepsias', group: 'mlpa' },
+  { key: 'mlpaSexuales', label: 'MLPA sexuales', group: 'mlpa' },
+  { key: 'mlpaSilverRussell', label: 'MLPA Silver Russell/Beckwith Wiedemann', group: 'mlpa' },
+  { key: 'mlpaPraderWilli', label: 'MLPA Prader Willi/Angelman', group: 'mlpa' },
+  { key: 'mlpaWilliams', label: 'MLPA Williams', group: 'mlpa' },
+  { key: 'sry', label: 'SRY' },
+  { key: 'microdelecionesY', label: 'Microdeleciones del cromosoma Y' },
+  { key: 'brca', label: 'BRCA1 / BRCA2' },
+  { key: 'carcinomaRet', label: 'Carcinoma medular de tiroides (gen RET)' },
+  { key: 'arrayCgh', label: 'Array-CGH' },
+  {
+    key: 'fibrosisQuistica',
+    label: 'Fibrosis quística y principales enfermedades respiratorias de causa genética',
+  },
 ];
+
+const GENETIC_GROUP_META = {
+  mlpa: {
+    label: 'Paneles MLPA',
+    description: 'Desplegá para registrar las distintas variantes MLPA.',
+  },
+};
+
+const GENETIC_DEFS_BY_KEY = GENETIC_DEFS.reduce((acc, def) => {
+  acc[def.key] = def;
+  return acc;
+}, {});
+
+const GENETIC_GROUP_ITEMS = GENETIC_DEFS.reduce((acc, def) => {
+  if (def.group) {
+    if (!acc[def.group]) acc[def.group] = [];
+    acc[def.group].push(def);
+  }
+  return acc;
+}, {});
+
+const GENETIC_BLOCKS = (() => {
+  const seenGroups = new Set();
+  return GENETIC_DEFS.reduce((blocks, def) => {
+    if (def.group) {
+      if (!seenGroups.has(def.group)) {
+        seenGroups.add(def.group);
+        blocks.push({ type: 'group', key: def.group });
+      }
+      return blocks;
+    }
+    blocks.push({ type: 'single', key: def.key });
+    return blocks;
+  }, []);
+})();
 
 // Paleta cromática para tarjetas de estudios genéticos
 const STUDY_CARD_THEMES = [
@@ -237,17 +293,44 @@ function useFamilyGenetics(familyId) {
   };
 }
 
-function GeneticRow({ label, value, onTogglePedido, onToggleRealizado, onResultChange }) {
+function GeneticRow({
+  label,
+  description,
+  value,
+  onTogglePedido,
+  onToggleRealizado,
+  onResultChange,
+}) {
   const { pedido = false, realizado = false, resultado = '' } = value || {};
   return (
     <div className="grid items-center gap-2 md:grid-cols-12">
-      <label className="md:col-span-4 flex items-center gap-2">
+      <label className="md:col-span-4 flex items-start gap-2">
         <input
           type="checkbox"
           checked={Boolean(pedido)}
+          className="mt-1"
           onChange={(event) => onTogglePedido(event.target.checked)}
         />
-        <span className="text-sm">{label}</span>
+        <div className="flex flex-col text-sm">
+          <span className="flex items-center gap-1">
+            {label}
+            {description ? (
+              <span className="relative inline-flex">
+                <span
+                  tabIndex={0}
+                  role="img"
+                  aria-label={`Información adicional sobre ${label}`}
+                  className="group inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-400 text-[11px] font-semibold text-slate-500 outline-none transition hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-slate-300"
+                >
+                  ⓘ
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-normal text-white shadow-lg group-hover:block group-focus-visible:block">
+                    {description}
+                  </span>
+                </span>
+              </span>
+            ) : null}
+          </span>
+        </div>
       </label>
       <div className="md:col-span-3 flex items-center gap-2">
         <input
@@ -346,6 +429,7 @@ export default function GeneticsPage({ familyId, inline = false }) {
   } = useFamilyGenetics(familyId);
 
   const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState({});
 
   useEffect(() => {
     if (!members.length) {
@@ -360,6 +444,13 @@ export default function GeneticsPage({ familyId, inline = false }) {
       setSelectedMemberId(members[0]?.id || '');
     }
   }, [members, selectedMemberId]);
+
+  const toggleGroup = useCallback((groupKey) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }));
+  }, []);
 
   const activeMember = useMemo(
     () => members.find((member) => member.id === selectedMemberId) || null,
@@ -391,6 +482,36 @@ export default function GeneticsPage({ familyId, inline = false }) {
     [activeMember, getMemberHPO],
   );
 
+  const renderGeneticRow = (def) => {
+    if (!def || !activeMember) return null;
+    return (
+      <GeneticRow
+        key={def.key}
+        label={def.label}
+        description={def.description}
+        value={activeGenetics[def.key]}
+        onTogglePedido={(checked) => {
+          void upsertMemberGenetic(activeMember.id, def.key, checked ? { pedido: true } : {
+            pedido: false,
+            realizado: false,
+            resultado: '',
+          });
+        }}
+        onToggleRealizado={(checked) => {
+          const base = activeGenetics[def.key] || {};
+          void upsertMemberGenetic(activeMember.id, def.key, {
+            realizado: checked,
+            pedido: checked ? true : base.pedido || false,
+            resultado: checked ? (base.resultado || 'Normal') : '',
+          });
+        }}
+        onResultChange={(text) => {
+          void upsertMemberGenetic(activeMember.id, def.key, { resultado: text });
+        }}
+      />
+    );
+  };
+
   const handleUploadFiles = useCallback(
     async (files) => {
       if (!activeMember || !family) return;
@@ -400,7 +521,7 @@ export default function GeneticsPage({ familyId, inline = false }) {
           const today = new Date().toISOString().slice(0, 10);
           const study = await createStudy({
             memberId: activeMember.id,
-            tipo: 'Genético',
+            tipo: 'GENETIC',
             nombre: file.name,
             fecha: today,
             resultado: '',
@@ -511,31 +632,58 @@ export default function GeneticsPage({ familyId, inline = false }) {
               <div className="text-sm text-slate-500">Seleccioná un integrante en el panel lateral.</div>
             ) : (
               <div className="grid gap-2">
-                {GENETIC_DEFS.map((def) => (
-                  <GeneticRow
-                    key={def.key}
-                    label={def.label}
-                    value={activeGenetics[def.key]}
-                    onTogglePedido={(checked) => {
-                      void upsertMemberGenetic(activeMember.id, def.key, checked ? { pedido: true } : {
-                        pedido: false,
-                        realizado: false,
-                        resultado: '',
-                      });
-                    }}
-                    onToggleRealizado={(checked) => {
-                      const base = activeGenetics[def.key] || {};
-                      void upsertMemberGenetic(activeMember.id, def.key, {
-                        realizado: checked,
-                        pedido: checked ? true : base.pedido || false,
-                        resultado: checked ? (base.resultado || 'Normal') : '',
-                      });
-                    }}
-                    onResultChange={(text) => {
-                      void upsertMemberGenetic(activeMember.id, def.key, { resultado: text });
-                    }}
-                  />
-                ))}
+                {GENETIC_BLOCKS.map((block) => {
+                  if (block.type === 'group') {
+                    const defs = GENETIC_GROUP_ITEMS[block.key] || [];
+                    const meta = GENETIC_GROUP_META[block.key];
+                    const open = Boolean(expandedGroups[block.key]);
+                    const requestedCount = defs.reduce(
+                      (acc, def) => acc + (activeGenetics[def.key]?.pedido ? 1 : 0),
+                      0,
+                    );
+                    const helperText = meta?.description || `${defs.length} estudios disponibles`;
+                    const summaryText = requestedCount
+                      ? `${requestedCount}/${defs.length} seleccionados`
+                      : '';
+                    return (
+                      <div key={block.key} className="rounded-xl border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(block.key)}
+                          aria-expanded={open}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">
+                              {meta?.label || block.key}
+                            </span>
+                            <span className="text-xs text-slate-500">{helperText}</span>
+                            {summaryText ? (
+                              <span className="text-[11px] text-slate-500">{summaryText}</span>
+                            ) : null}
+                          </div>
+                          <span
+                            aria-hidden="true"
+                            className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 text-xs text-slate-500 transition-transform duration-150 ${
+                              open ? 'rotate-90' : ''
+                            }`}
+                          >
+                            ▸
+                          </span>
+                        </button>
+                        {open && (
+                          <div className="border-t border-slate-100 bg-slate-50 p-3 md:px-4">
+                            <div className="grid gap-2">
+                              {defs.map((def) => renderGeneticRow(def))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  const def = GENETIC_DEFS_BY_KEY[block.key];
+                  return renderGeneticRow(def);
+                })}
               </div>
             )}
           </div>

@@ -35,6 +35,25 @@ const MAX_IMAGE_BYTES = 2.5 * 1024 * 1024; // 2.5 MB límite objetivo por imagen
 const MAX_IMAGE_DIMENSION = 1920;
 const JPEG_QUALITY_STEPS = [0.82, 0.72, 0.62, 0.52];
 
+const normalizeImageDataUrl = (dataUrl, preferredType) => {
+  if (
+    !dataUrl ||
+    typeof dataUrl !== 'string' ||
+    !preferredType ||
+    !dataUrl.startsWith('data:')
+  ) {
+    return dataUrl;
+  }
+  return dataUrl.replace(/^data:[^;,]+/, `data:${preferredType}`);
+};
+
+const resolveImageContentType = (value) => {
+  if (typeof value === 'string' && value.trim().toLowerCase().startsWith('image/')) {
+    return value.trim().toLowerCase();
+  }
+  return 'image/jpeg';
+};
+
 const readFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -420,9 +439,13 @@ function UploadTicketMode({ ticketContext }) {
           });
         } catch (error) {
           console.error('No se pudo subir la foto con ticket', error);
+          const unauthorized =
+            (error && typeof error === 'object' && 'status' in error && error.status === 401);
           setStatus({
             uploading: false,
-            error: `No se pudo subir "${file.name}". Intentá nuevamente.`,
+            error: unauthorized
+              ? 'El enlace venció o fue revocado. Cerrá esta ventana y pedí un nuevo código QR.'
+              : `No se pudo subir "${file.name}". Intentá nuevamente.`,
             success: null,
           });
           return;
@@ -555,12 +578,21 @@ export default function PhotosPage(props) {
 
 function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) {
   const [previews, setPreviews] = useState({});
+  const previewsRef = useRef(previews);
+
+  useEffect(() => {
+    previewsRef.current = previews;
+  }, [previews]);
   const [ticketInfo, setTicketInfo] = useState(null);
   const [ticketError, setTicketError] = useState(null);
   const [ticketRefreshKey, setTicketRefreshKey] = useState(0);
   const [ticketLoading, setTicketLoading] = useState(false);
   const [ticketCountdown, setTicketCountdown] = useState('');
   const qrCanvasRef = useRef(null);
+  const [viewerIndex, setViewerIndex] = useState(null);
+  const [viewerMedia, setViewerMedia] = useState(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState(null);
 
   const {
     state,
@@ -568,8 +600,75 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
     createAttachment,
     deleteAttachment,
     downloadAttachment,
+    getAttachmentDetail,
     listAttachmentsByFamily,
   } = useCenagemStore();
+
+  const revokeGeneratedUrl = useCallback((entry) => {
+    if (entry?.generated && entry.url) {
+      URL.revokeObjectURL(entry.url);
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      revokeGeneratedUrl(viewerMedia);
+    },
+    [viewerMedia, revokeGeneratedUrl],
+  );
+
+  const prepareAttachmentUrl = useCallback(
+    async (photo) => {
+      if (!photo?.id) {
+        throw new Error('Adjunto inválido');
+      }
+      console.debug('[PhotosPage] Preparando recurso para visor', {
+        photoId: photo.id,
+        memberId: photo.memberId,
+        hasBase64: Boolean(photo.base64Data),
+        contentType: photo.contentType,
+      });
+      if (photo.base64Data) {
+        const contentType = resolveImageContentType(photo.contentType);
+        return {
+          url: `data:${contentType};base64,${photo.base64Data}`,
+          generated: false,
+          debugInfo: { base64Length: photo.base64Data.length, via: 'inline' },
+        };
+      }
+
+      let detail = null;
+      try {
+        detail = await getAttachmentDetail(photo.id);
+      } catch (detailError) {
+        console.warn('No se pudo obtener el detalle del adjunto', {
+          attachmentId: photo.id,
+          detailError,
+        });
+      }
+      const detailBase64 = detail?.base64Data;
+      if (detailBase64) {
+        const contentType = resolveImageContentType(detail?.contentType || photo.contentType);
+        return {
+          url: `data:${contentType};base64,${detailBase64}`,
+          generated: false,
+          debugInfo: { base64Length: detailBase64.length, via: 'detail' },
+        };
+      }
+
+      const blob = await downloadAttachment(photo.id);
+      return {
+        url: URL.createObjectURL(blob),
+        generated: true,
+        debugInfo: {
+          blobType: blob?.type || '',
+          blobSize: blob?.size ?? null,
+          via: 'download',
+        },
+      };
+    },
+    [downloadAttachment, getAttachmentDetail],
+  );
 
   useEffect(() => {
     if (familyId) {
@@ -767,6 +866,122 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
       }),
     [filteredPhotos],
   );
+  const totalSortedPhotos = sortedPhotos.length;
+
+  const openViewer = useCallback(
+    (photoId) => {
+      const index = sortedPhotos.findIndex((photo) => photo.id === photoId);
+      if (index >= 0) {
+        setViewerMedia((prev) => {
+          revokeGeneratedUrl(prev);
+          return null;
+        });
+        setViewerIndex(index);
+      }
+    },
+    [sortedPhotos, revokeGeneratedUrl],
+  );
+
+  const closeViewer = useCallback(() => {
+    setViewerIndex(null);
+    setViewerError(null);
+    setViewerLoading(false);
+    setViewerMedia((prev) => {
+      revokeGeneratedUrl(prev);
+      return null;
+    });
+  }, [revokeGeneratedUrl]);
+
+  const showNextPhoto = useCallback(() => {
+    setViewerIndex((current) => {
+      if (current == null || totalSortedPhotos <= 1) {
+        return current;
+      }
+      return (current + 1) % totalSortedPhotos;
+    });
+  }, [totalSortedPhotos]);
+
+  const showPreviousPhoto = useCallback(() => {
+    setViewerIndex((current) => {
+      if (current == null || totalSortedPhotos <= 1) {
+        return current;
+      }
+      return (current - 1 + totalSortedPhotos) % totalSortedPhotos;
+    });
+  }, [totalSortedPhotos]);
+
+  useEffect(() => {
+    if (viewerIndex == null) return;
+    if (!totalSortedPhotos) {
+      closeViewer();
+      return;
+    }
+    if (viewerIndex >= totalSortedPhotos) {
+      setViewerIndex(totalSortedPhotos - 1);
+    }
+  }, [viewerIndex, totalSortedPhotos, closeViewer]);
+
+  useEffect(() => {
+    if (viewerIndex == null) return;
+    const photo = sortedPhotos[viewerIndex];
+    if (!photo) {
+      closeViewer();
+      return;
+    }
+    let cancelled = false;
+    setViewerLoading(true);
+    setViewerError(null);
+    (async () => {
+      try {
+        const media = await prepareAttachmentUrl(photo);
+        if (cancelled) {
+          revokeGeneratedUrl(media);
+          return;
+        }
+        setViewerMedia((prev) => {
+          revokeGeneratedUrl(prev);
+          return media;
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error('No se pudo preparar la imagen para el visor', {
+            photoId: photo?.id,
+            error,
+          });
+          setViewerError('No se pudo cargar la imagen. Intentá nuevamente.');
+          setViewerMedia((prev) => {
+            revokeGeneratedUrl(prev);
+            return null;
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setViewerLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerIndex, sortedPhotos, prepareAttachmentUrl, revokeGeneratedUrl, closeViewer]);
+
+  useEffect(() => {
+    if (viewerIndex == null) return;
+    const handleKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeViewer();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        showNextPhoto();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        showPreviousPhoto();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [viewerIndex, closeViewer, showNextPhoto, showPreviousPhoto]);
 
   const uploadUrl = useMemo(() => {
     if (typeof window === 'undefined' || !family || !ticketInfo?.ticket) return '';
@@ -812,44 +1027,63 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
     });
   }, [photos]);
 
-  useEffect(() => () => {
-    Object.values(previews).forEach((entry) => {
-      if (entry.generated) {
-        URL.revokeObjectURL(entry.url);
-      }
-    });
-  }, [previews]);
+  useEffect(
+    () => () => {
+      Object.values(previewsRef.current).forEach((entry) => {
+        if (entry.generated) {
+          URL.revokeObjectURL(entry.url);
+        }
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
-    const missing = filteredPhotos.filter((photo) => !previews[photo.id]);
+    const missing = filteredPhotos.filter(
+      (photo) => photo?.id && !previewsRef.current[photo.id],
+    );
     if (!missing.length) return undefined;
     let cancelled = false;
 
     (async () => {
       for (const photo of missing) {
         try {
-          let url;
-          let generated = false;
-          if (photo.base64Data) {
-            url = `data:${photo.contentType || 'image/*'};base64,${photo.base64Data}`;
-          } else {
-            const blob = await downloadAttachment(photo.id);
-            if (cancelled) return;
-            url = URL.createObjectURL(blob);
-            generated = true;
+          const media = await prepareAttachmentUrl(photo);
+          if (cancelled) {
+            revokeGeneratedUrl(media);
+            return;
           }
+          console.debug('[PhotosPage] Vista previa lista', {
+            photoId: photo.id,
+            generatedFromBlob: media.generated,
+            debugInfo: media.debugInfo,
+          });
           setPreviews((prev) => {
             if (cancelled || prev[photo.id]) {
-              if (generated) URL.revokeObjectURL(url);
+              if (media.generated) revokeGeneratedUrl(media);
+              if (prev[photo.id]) {
+                console.debug(
+                  '[PhotosPage] Vista previa descartada porque ya existía',
+                  { photoId: photo.id },
+                );
+              }
               return prev;
             }
+            console.debug('[PhotosPage] Vista previa almacenada', {
+              photoId: photo.id,
+            });
             return {
               ...prev,
-              [photo.id]: { url, generated },
+              [photo.id]: { url: media.url, generated: media.generated },
             };
           });
         } catch (error) {
-          console.error('No se pudo obtener la imagen', error);
+          console.error('No se pudo obtener la imagen', {
+            photoId: photo?.id,
+            memberId: photo?.memberId,
+            description: photo?.description,
+            error,
+          });
         }
       }
     })();
@@ -857,7 +1091,7 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
     return () => {
       cancelled = true;
     };
-  }, [filteredPhotos, previews, downloadAttachment]);
+  }, [filteredPhotos, prepareAttachmentUrl, revokeGeneratedUrl]);
 
   const handleUploadFiles = async (files) => {
     if (!familyId || !selectedMemberId) return;
@@ -871,10 +1105,14 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
           file,
         });
         if (attachment?.id) {
-          const url = URL.createObjectURL(file);
+          const rawUrl = await readFileAsDataUrl(file);
+          const url = normalizeImageDataUrl(
+            rawUrl,
+            resolveImageContentType(file.type || attachment?.contentType),
+          );
           setPreviews((prev) => ({
             ...prev,
-            [attachment.id]: { url, generated: true },
+            [attachment.id]: { url, generated: false },
           }));
         }
       } catch (error) {
@@ -941,6 +1179,18 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
   const autoRefreshLabel = `Actualización automática cada ${Math.round(
     AUTO_REFRESH_INTERVAL_MS / 1000,
   )} s`;
+  const viewerPhoto = viewerIndex != null ? sortedPhotos[viewerIndex] : null;
+  const canNavigateViewer = totalSortedPhotos > 1;
+  const viewerMember = useMemo(
+    () => (viewerPhoto ? members.find((member) => member.id === viewerPhoto.memberId) || null : null),
+    [viewerPhoto, members],
+  );
+  const viewerTitle =
+    viewerPhoto?.description ||
+    viewerPhoto?.fileName ||
+    (viewerMember
+      ? `Foto de ${viewerMember.filiatorios?.nombreCompleto || viewerMember.nombre || 'integrante'}`
+      : 'Foto');
 
   return (
     <div className={inline ? 'space-y-6' : 'p-6 space-y-6'}>
@@ -1017,25 +1267,35 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
                     key={photo.id}
                     className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
                   >
-                    <div className="relative aspect-[4/5] bg-slate-200">
-                      {preview ? (
-                        <a
-                          href={preview}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="absolute inset-0"
-                        >
+                    <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => openViewer(photo.id)}
+                        className="absolute inset-0 h-full w-full cursor-zoom-in focus:outline-none focus-visible:ring focus-visible:ring-emerald-400/70"
+                        aria-label={`Abrir visor para ${description}`}
+                      >
+                        {preview ? (
                           <img
                             src={preview}
                             alt={description}
                             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                            onError={(event) => {
+                              console.error('No se pudo renderizar la vista previa', {
+                                photoId: photo.id,
+                                memberId: photo.memberId,
+                                previewSample: preview?.slice?.(0, 80) ?? null,
+                              });
+                              event.currentTarget.onerror = null;
+                              event.currentTarget.style.visibility = 'hidden';
+                            }}
                           />
-                        </a>
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
-                          Cargando vista previa…
-                        </div>
-                      )}
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center px-3 text-center text-xs text-slate-500">
+                            Vista previa no disponible
+                          </div>
+                        )}
+                        <span className="sr-only">Abrir visor</span>
+                      </button>
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/65 via-black/20 to-transparent opacity-0 transition group-hover:opacity-100" />
                     </div>
                     <div className="relative grid gap-2 p-4">
@@ -1048,16 +1308,6 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
                             {formatDateTime(photo.createdAt)}
                           </p>
                         </div>
-                        {preview && (
-                          <a
-                            href={preview}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-600 transition hover:bg-emerald-100"
-                          >
-                            Abrir
-                          </a>
-                        )}
                       </div>
                       <button
                         type="button"
@@ -1222,6 +1472,82 @@ function StandardPhotosPage({ familyId, inline = false, initialMemberId = '' }) 
           </section>
         </aside>
       </div>
+      {viewerPhoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4 py-8">
+          <div className="absolute inset-0" onClick={closeViewer} />
+          <div
+            className="relative z-10 w-full max-w-5xl space-y-4 text-white"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.2em] text-white/70">Visor de fotos</p>
+                <h3 className="text-xl font-semibold leading-tight">{viewerTitle}</h3>
+                <p className="text-xs text-white/70">
+                  {formatDateTime(viewerPhoto.createdAt)}
+                  {viewerMember
+                    ? ` · ${viewerMember.filiatorios?.nombreCompleto || viewerMember.nombre || 'Integrante'}`
+                    : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeViewer}
+                className="rounded-full border border-white/30 px-4 py-1 text-sm font-medium text-white transition hover:bg-white/10"
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="flex items-center gap-4">
+              {canNavigateViewer && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    showPreviousPhoto();
+                  }}
+                  className="rounded-full border border-white/30 p-3 text-white transition hover:bg-white/10"
+                  aria-label="Foto anterior"
+                >
+                  ‹
+                </button>
+              )}
+              <div className="flex-1">
+                <div className="flex max-h-[70vh] min-h-[320px] items-center justify-center overflow-hidden rounded-3xl bg-black/30 p-4">
+                  {viewerLoading && (
+                    <div className="text-sm text-white/70">Cargando foto…</div>
+                  )}
+                  {!viewerLoading && viewerMedia?.url && (
+                    <img
+                      src={viewerMedia.url}
+                      alt={viewerTitle}
+                      className="max-h-full max-w-full rounded-2xl object-contain"
+                    />
+                  )}
+                  {!viewerLoading && !viewerMedia?.url && (
+                    <div className="text-sm text-rose-200">
+                      {viewerError || 'La imagen no está disponible.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {canNavigateViewer && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    showNextPhoto();
+                  }}
+                  className="rounded-full border border-white/30 p-3 text-white transition hover:bg-white/10"
+                  aria-label="Foto siguiente"
+                >
+                  ›
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

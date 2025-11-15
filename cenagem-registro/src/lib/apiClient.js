@@ -68,6 +68,68 @@ const dispatchAuthEvent = (type, detail) => {
 
 const shouldSkipAuthRetry = (path) => path.startsWith('/auth/');
 
+const downloadAttachmentWithRetry = async (attachmentId, attempt = 0) => {
+  const path = `/attachments/${attachmentId}/download`;
+  const url = `${API_BASE}${path}`;
+  const headers = authTokens?.accessToken
+    ? { Authorization: `Bearer ${authTokens.accessToken}` }
+    : undefined;
+  console.debug('[api] Descargando adjunto', {
+    attachmentId,
+    attempt,
+    url,
+  });
+  const response = await fetch(url, {
+    headers,
+    cache: 'no-store',
+  });
+  console.debug('[api] Respuesta de adjunto', {
+    attachmentId,
+    attempt,
+    status: response.status,
+    ok: response.ok,
+    contentType: response.headers.get('Content-Type'),
+    contentLength: response.headers.get('Content-Length'),
+  });
+  if (response.ok) {
+    const blob = await response.blob();
+    console.debug('[api] Adjunto descargado', {
+      attachmentId,
+      attempt,
+      blobType: blob.type,
+      blobSize: blob.size,
+    });
+    return blob;
+  }
+
+  if (
+    response.status === 401 &&
+    authTokens?.refreshToken &&
+    attempt === 0 &&
+    !shouldSkipAuthRetry(path)
+  ) {
+    try {
+      await refreshAccessToken();
+      console.warn('[api] Reintentando descarga de adjunto tras refrescar token', {
+        attachmentId,
+        attempt,
+      });
+      return downloadAttachmentWithRetry(attachmentId, attempt + 1);
+    } catch {
+      // Fall through to error handling
+    }
+  }
+
+  const error = new Error(`No se pudo descargar el adjunto (${response.status})`);
+  error.status = response.status;
+  console.error('[api] Error descargando adjunto', {
+    attachmentId,
+    attempt,
+    status: response.status,
+  });
+  throw error;
+};
+
 const isFormData = (value) =>
   typeof FormData !== 'undefined' && value instanceof FormData;
 
@@ -218,6 +280,8 @@ async function request(path, options = {}) {
     error.info = info;
     if (response.status === 401) {
       console.warn('[api] Unauthorized response', info);
+      clearAuthTokens();
+      dispatchAuthEvent(AUTH_EVENT_CLEAR);
     } else if (response.status >= 500) {
       console.error('[api] Server error response', info);
     } else {
@@ -420,6 +484,9 @@ export const cenagemApi = {
       `/families/${familyId}/attachments${buildQuery(params)}`,
     );
   },
+  getAttachment(attachmentId) {
+    return request(`/attachments/${attachmentId}`);
+  },
   createAttachment(payload) {
     return request('/attachments', {
       method: 'POST',
@@ -456,17 +523,6 @@ export const cenagemApi = {
     });
   },
   async downloadAttachment(attachmentId) {
-    const url = `${API_BASE}/attachments/${attachmentId}/download`;
-    const response = await fetch(url, {
-      headers: authTokens?.accessToken
-        ? { Authorization: `Bearer ${authTokens.accessToken}` }
-        : undefined,
-    });
-    if (!response.ok) {
-      const error = new Error(`No se pudo descargar el adjunto (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return response.blob();
+    return downloadAttachmentWithRetry(attachmentId);
   },
 };

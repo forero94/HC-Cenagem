@@ -332,9 +332,26 @@ const toMemberPayload = (member, patchOnly = false) => {
   return payload;
 };
 
+const normalizeStudyTypeToApi = (value) => {
+  if (!value) return 'OTHER';
+  const raw = String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  if (['COMPLEMENTARY', 'GENETIC', 'OTHER'].includes(raw)) {
+    return raw;
+  }
+  if (raw.includes('GENET')) return 'GENETIC';
+  if (raw.includes('COMPLE')) return 'COMPLEMENTARY';
+  if (raw.includes('OTR')) return 'OTHER';
+  return 'OTHER';
+};
+
 const toStudyPayload = (study) => ({
   memberId: study.memberId,
-  type: study.tipo || study.type || 'OTHER',
+  type: normalizeStudyTypeToApi(study.type ?? study.tipo),
   status: study.estado || study.status || 'REQUESTED',
   name: study.nombre || study.name || '',
   description: study.descripcion || '',
@@ -702,6 +719,10 @@ export function useCenagemStore() {
     (attachmentId) => cenagemApi.downloadAttachment(attachmentId),
     [],
   );
+  const getAttachmentDetail = useCallback(
+    (attachmentId) => cenagemApi.getAttachment(attachmentId),
+    [],
+  );
 
   const storeState = useMemo(
     () => ({
@@ -742,6 +763,7 @@ export function useCenagemStore() {
     createAttachment,
     deleteAttachment,
     downloadAttachment,
+    getAttachmentDetail,
     STATUS_FROM_API,
     STATUS_TO_API,
     mapAppointment,

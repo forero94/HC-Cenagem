@@ -65,6 +65,25 @@ const formatDateTime = (iso) => {
   }
 };
 
+const normalizeImageDataUrl = (dataUrl, preferredType) => {
+  if (
+    !dataUrl ||
+    typeof dataUrl !== 'string' ||
+    !preferredType ||
+    !dataUrl.startsWith('data:')
+  ) {
+    return dataUrl;
+  }
+  return dataUrl.replace(/^data:[^;,]+/, `data:${preferredType}`);
+};
+
+const resolveImageContentType = (value) => {
+  if (typeof value === 'string' && value.trim().toLowerCase().startsWith('image/')) {
+    return value.trim().toLowerCase();
+  }
+  return 'image/jpeg';
+};
+
 const readFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -336,9 +355,13 @@ function UploadTicketMode({ ticketContext }) {
           });
         } catch (error) {
           console.error('No se pudo subir la foto del árbol con ticket', error);
+          const unauthorized =
+            (error && typeof error === 'object' && 'status' in error && error.status === 401);
           setStatus({
             uploading: false,
-            error: `No se pudo subir "${file.name}". Intentá nuevamente.`,
+            error: unauthorized
+              ? 'El enlace venció o fue revocado. Cerrá esta ventana y pedí un nuevo código QR.'
+              : `No se pudo subir "${file.name}". Intentá nuevamente.`,
             success: null,
           });
           return;
@@ -424,6 +447,12 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
   const [ticketLoading, setTicketLoading] = useState(false);
   const [ticketCountdown, setTicketCountdown] = useState('');
   const qrCanvasRef = useRef(null);
+  const [viewerIndex, setViewerIndex] = useState(null);
+  const [viewerMedia, setViewerMedia] = useState(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState(null);
+  const viewerOverlayRef = useRef(null);
+  const fullscreenRequestedRef = useRef(false);
 
   const {
     state,
@@ -431,6 +460,7 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
     createAttachment,
     deleteAttachment,
     downloadAttachment,
+    getAttachmentDetail,
     listAttachmentsByFamily,
   } = useCenagemStore();
 
@@ -508,39 +538,318 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
       }),
     [treePhotos],
   );
+  const totalTreePhotosCount = sortedTreePhotos.length;
+  const viewerVisible = viewerIndex != null;
+  const viewerTreePhoto = viewerVisible ? sortedTreePhotos[viewerIndex] : null;
+  const canNavigateTreeViewer = totalTreePhotosCount > 1;
+  const viewerTreeTitle =
+    viewerTreePhoto?.description || viewerTreePhoto?.fileName || 'Árbol familiar';
+  const revokeGeneratedUrl = useCallback((entry) => {
+    if (entry?.generated && entry.url) {
+      URL.revokeObjectURL(entry.url);
+    }
+  }, []);
 
-  const [previews, setPreviews] = useState({});
+  const openTreeViewer = useCallback(
+    (photoId) => {
+      const index = sortedTreePhotos.findIndex((photo) => photo.id === photoId);
+      if (index >= 0) {
+        setViewerMedia((prev) => {
+          revokeGeneratedUrl(prev);
+          return null;
+        });
+        setViewerIndex(index);
+      }
+    },
+    [sortedTreePhotos, revokeGeneratedUrl],
+  );
+
+  const closeTreeViewer = useCallback(() => {
+    setViewerIndex(null);
+    setViewerError(null);
+    setViewerLoading(false);
+    setViewerMedia((prev) => {
+      revokeGeneratedUrl(prev);
+      return null;
+    });
+  }, [revokeGeneratedUrl]);
+
+  const showNextTreePhoto = useCallback(() => {
+    setViewerIndex((current) => {
+      if (current == null || totalTreePhotosCount <= 1) {
+        return current;
+      }
+      return (current + 1) % totalTreePhotosCount;
+    });
+  }, [totalTreePhotosCount]);
+
+  const showPrevTreePhoto = useCallback(() => {
+    setViewerIndex((current) => {
+      if (current == null || totalTreePhotosCount <= 1) {
+        return current;
+      }
+      return (current - 1 + totalTreePhotosCount) % totalTreePhotosCount;
+    });
+  }, [totalTreePhotosCount]);
+
+  const prepareTreeAttachmentUrl = useCallback(
+    async (photo) => {
+      if (!photo?.id) {
+        throw new Error('Adjunto inválido para el árbol');
+      }
+      console.debug('[FamilyTreePage] Preparando recurso para visor', {
+        photoId: photo.id,
+        hasBase64: Boolean(photo.base64Data),
+        contentType: photo.contentType,
+      });
+      if (photo.base64Data) {
+        const contentType = resolveImageContentType(photo.contentType);
+        return {
+          url: `data:${contentType};base64,${photo.base64Data}`,
+          generated: false,
+          debugInfo: { base64Length: photo.base64Data.length, via: 'inline' },
+        };
+      }
+      let detail = null;
+      try {
+        detail = await getAttachmentDetail(photo.id);
+      } catch (detailError) {
+        console.warn('No se pudo obtener el detalle del adjunto del árbol', {
+          attachmentId: photo.id,
+          detailError,
+        });
+      }
+      const detailBase64 = detail?.base64Data;
+      if (detailBase64) {
+        const contentType = resolveImageContentType(detail?.contentType || photo.contentType);
+        return {
+          url: `data:${contentType};base64,${detailBase64}`,
+          generated: false,
+          debugInfo: { base64Length: detailBase64.length, via: 'detail' },
+        };
+      }
+      const blob = await downloadAttachment(photo.id);
+      return {
+        url: URL.createObjectURL(blob),
+        generated: true,
+        debugInfo: {
+          blobType: blob?.type || '',
+          blobSize: blob?.size ?? null,
+          via: 'download',
+        },
+      };
+    },
+    [downloadAttachment, getAttachmentDetail],
+  );
 
   useEffect(() => {
+    if (viewerIndex == null) return;
+    if (!totalTreePhotosCount) {
+      closeTreeViewer();
+      return;
+    }
+    if (viewerIndex >= totalTreePhotosCount) {
+      setViewerIndex(totalTreePhotosCount - 1);
+    }
+  }, [viewerIndex, totalTreePhotosCount, closeTreeViewer]);
+
+  useEffect(() => {
+    if (viewerIndex == null) return;
+    const photo = sortedTreePhotos[viewerIndex];
+    if (!photo) {
+      closeTreeViewer();
+      return;
+    }
+    let cancelled = false;
+    setViewerLoading(true);
+    setViewerError(null);
+    (async () => {
+      try {
+        const media = await prepareTreeAttachmentUrl(photo);
+        if (cancelled) {
+          revokeGeneratedUrl(media);
+          return;
+        }
+        setViewerMedia((prev) => {
+          revokeGeneratedUrl(prev);
+          return media;
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error('No se pudo preparar la imagen del árbol para el visor', {
+            photoId: photo?.id,
+            error,
+          });
+          setViewerError('No se pudo cargar la imagen. Intentá nuevamente.');
+          setViewerMedia((prev) => {
+            revokeGeneratedUrl(prev);
+            return null;
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setViewerLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerIndex, sortedTreePhotos, prepareTreeAttachmentUrl, revokeGeneratedUrl, closeTreeViewer]);
+
+  useEffect(() => {
+    if (viewerIndex == null) return;
+    const handleKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeTreeViewer();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        showNextTreePhoto();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        showPrevTreePhoto();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [viewerIndex, closeTreeViewer, showNextTreePhoto, showPrevTreePhoto]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+
+    const exitFullscreen = async () => {
+      const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+      if (!fullscreenElement) {
+        fullscreenRequestedRef.current = false;
+        return;
+      }
+      const exit =
+        document.exitFullscreen ||
+        document.webkitExitFullscreen ||
+        document.msExitFullscreen;
+      if (!exit) {
+        fullscreenRequestedRef.current = false;
+        return;
+      }
+      try {
+        await exit.call(document);
+      } catch (error) {
+        console.warn('No se pudo salir del modo pantalla completa del visor', error);
+      } finally {
+        fullscreenRequestedRef.current = false;
+      }
+    };
+
+    const overlayElement = viewerOverlayRef.current;
+    const fullscreenActive = document.fullscreenElement || document.webkitFullscreenElement;
+
+    if (viewerVisible && overlayElement && !fullscreenActive && !fullscreenRequestedRef.current) {
+      const request =
+        overlayElement.requestFullscreen ||
+        overlayElement.webkitRequestFullscreen ||
+        overlayElement.msRequestFullscreen;
+      if (request) {
+        request
+          .call(overlayElement)
+          .then(() => {
+            fullscreenRequestedRef.current = true;
+          })
+          .catch((error) => {
+            console.warn('No se pudo activar el modo pantalla completa del visor', error);
+          });
+      }
+    } else if (!viewerVisible && fullscreenRequestedRef.current) {
+      void exitFullscreen();
+    }
+
+    return () => {
+      if (viewerVisible && fullscreenRequestedRef.current) {
+        void exitFullscreen();
+      }
+    };
+  }, [viewerVisible]);
+
+  const [previews, setPreviews] = useState({});
+  const previewsRef = useRef(previews);
+
+  useEffect(() => {
+    previewsRef.current = previews;
+  }, [previews]);
+
+  useEffect(
+    () => () => {
+      revokeGeneratedUrl(viewerMedia);
+    },
+    [viewerMedia, revokeGeneratedUrl],
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const payload = {
+      treePhotos: treePhotos.map((photo) => ({
+        id: photo.id,
+        memberId: photo.memberId,
+        description: photo.description,
+        createdAt: photo.createdAt,
+        hasBase64: Boolean(photo.base64Data),
+        contentType: photo.contentType,
+      })),
+      sortedTreePhotos: sortedTreePhotos.map((photo) => photo.id),
+      previewsKeys: Object.keys(previews),
+    };
+    window.__LAST_DEBUG = window.__LAST_DEBUG || {};
+    window.__LAST_DEBUG.treeGallery = payload;
+    console.debug('[FamilyTreePage] Estado inicializado', payload);
+  }, [treePhotos, sortedTreePhotos, previews]);
+
+  useEffect(() => {
+    const pending = sortedTreePhotos.filter(
+      (photo) => photo?.id && !previewsRef.current[photo.id],
+    );
+    if (!pending.length) {
+      return undefined;
+    }
     let cancelled = false;
 
     (async () => {
-      for (const photo of sortedTreePhotos) {
-        if (!photo?.id || previews[photo.id]) continue;
+      for (const photo of pending) {
         try {
-          let url;
-          let generated = false;
-          if (photo.base64Data) {
-            url = `data:${photo.contentType || 'image/*'};base64,${photo.base64Data}`;
-          } else {
-            const blob = await downloadAttachment(photo.id);
-            if (cancelled) return;
-            url = URL.createObjectURL(blob);
-            generated = true;
+          const media = await prepareTreeAttachmentUrl(photo);
+          if (cancelled) {
+            revokeGeneratedUrl(media);
+            return;
           }
-
+          console.debug('[FamilyTreePage] Vista previa lista', {
+            photoId: photo.id,
+            generatedFromBlob: media.generated,
+            debugInfo: media.debugInfo,
+          });
           setPreviews((prev) => {
             if (cancelled || prev[photo.id]) {
-              if (generated) URL.revokeObjectURL(url);
+              if (media.generated) revokeGeneratedUrl(media);
+              if (prev[photo.id]) {
+                console.debug(
+                  '[FamilyTreePage] Vista previa descartada porque ya existía',
+                  { photoId: photo.id },
+                );
+              }
               return prev;
             }
+            console.debug('[FamilyTreePage] Vista previa almacenada', {
+              photoId: photo.id,
+            });
             return {
               ...prev,
-              [photo.id]: { url, generated },
+              [photo.id]: { url: media.url, generated: media.generated },
             };
           });
         } catch (error) {
-          console.error('No se pudo obtener la imagen del árbol familiar', error);
+          console.error('No se pudo obtener la imagen del árbol familiar', {
+            photoId: photo?.id,
+            memberId: photo?.memberId,
+            description: photo?.description,
+            error,
+          });
         }
       }
     })();
@@ -548,7 +857,7 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
     return () => {
       cancelled = true;
     };
-  }, [sortedTreePhotos, previews, downloadAttachment]);
+  }, [sortedTreePhotos, prepareTreeAttachmentUrl, revokeGeneratedUrl]);
 
   useEffect(() => {
     const validIds = new Set(sortedTreePhotos.map((photo) => String(photo.id)));
@@ -571,13 +880,13 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
 
   useEffect(
     () => () => {
-      Object.values(previews).forEach((entry) => {
+      Object.values(previewsRef.current).forEach((entry) => {
         if (entry?.generated) {
           URL.revokeObjectURL(entry.url);
         }
       });
     },
-    [previews],
+    [],
   );
 
   const fetchUploadTicket = useCallback(async () => {
@@ -692,10 +1001,14 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
           }),
         );
         if (attachment?.id) {
-          const url = URL.createObjectURL(file);
+          const rawUrl = await readFileAsDataUrl(file);
+          const url = normalizeImageDataUrl(
+            rawUrl,
+            resolveImageContentType(file.type || attachment?.contentType),
+          );
           setPreviews((prev) => ({
             ...prev,
-            [attachment.id]: { url, generated: true },
+            [attachment.id]: { url, generated: false },
           }));
         }
         hasChanges = true;
@@ -805,19 +1118,39 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
                     key={photo.id}
                     className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
                   >
-                    <div className="relative aspect-[4/5] overflow-hidden bg-slate-200">
-                      {preview ? (
-                        <img
-                          src={preview}
-                          alt={description}
-                          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center px-3 text-center text-xs text-slate-500">
-                          Vista previa no disponible
-                        </div>
-                      )}
+                    <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => openTreeViewer(photo.id)}
+                        className="absolute inset-0 h-full w-full cursor-zoom-in focus:outline-none focus-visible:ring focus-visible:ring-slate-400/70"
+                        aria-label={`Abrir visor para ${description}`}
+                      >
+                        {preview ? (
+                          <img
+                            src={preview}
+                            alt={description}
+                            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                            loading="lazy"
+                            onError={(event) => {
+                              console.error(
+                                'No se pudo renderizar la vista previa del árbol',
+                                {
+                                  photoId: photo.id,
+                                  memberId: photo.memberId,
+                                  previewSample: preview?.slice?.(0, 80) ?? null,
+                                },
+                              );
+                              event.currentTarget.onerror = null;
+                              event.currentTarget.style.visibility = 'hidden';
+                            }}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center px-3 text-center text-xs text-slate-500">
+                            Vista previa no disponible
+                          </div>
+                        )}
+                        <span className="sr-only">Abrir visor</span>
+                      </button>
                     </div>
                     <div className="relative grid gap-2 p-4">
                       <div className="flex items-start justify-between gap-3">
@@ -827,19 +1160,6 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
                           </p>
                           <p className="text-xs text-slate-400">{formatDateTime(photo.createdAt)}</p>
                         </div>
-                        <a
-                          href={preview || '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`rounded-xl border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 ${preview ? '' : 'pointer-events-none opacity-50'}`}
-                          onClick={(event) => {
-                            if (!preview) {
-                              event.preventDefault();
-                            }
-                          }}
-                        >
-                          Ver grande
-                        </a>
                       </div>
                       <button
                         type="button"
@@ -932,6 +1252,80 @@ function StandardFamilyTreePage({ familyId, inline = false }) {
           </section>
         </aside>
       </div>
+      {viewerTreePhoto && (
+        <div
+          ref={viewerOverlayRef}
+          className="fixed inset-0 z-50 bg-slate-950/95"
+        >
+          <div className="absolute inset-0" onClick={closeTreeViewer} />
+          <div
+            className="relative z-10 flex h-full w-full flex-col gap-6 px-6 py-6 text-white"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm uppercase tracking-[0.2em] text-white/70">Visor del árbol</p>
+                <h3 className="text-2xl font-semibold leading-tight">{viewerTreeTitle}</h3>
+                <p className="text-xs text-white/70">{formatDateTime(viewerTreePhoto.createdAt)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeTreeViewer}
+                className="self-start rounded-full bg-white/90 px-5 py-2 text-sm font-semibold text-slate-900 shadow-lg shadow-black/30 transition hover:bg-white focus:outline-none focus-visible:ring focus-visible:ring-white/40"
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="relative flex flex-1 min-h-0 items-center justify-center">
+              {canNavigateTreeViewer && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    showPrevTreePhoto();
+                  }}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-white/90 p-4 text-2xl font-semibold text-slate-900 shadow-lg shadow-black/40 transition hover:bg-white focus:outline-none focus-visible:ring focus-visible:ring-white/40"
+                  aria-label="Foto anterior"
+                >
+                  ‹
+                </button>
+              )}
+              <div className="flex h-full w-full items-center justify-center">
+                <div className="flex h-full w-full items-center justify-center">
+                  {viewerLoading && (
+                    <div className="text-sm text-white/70">Cargando foto…</div>
+                  )}
+                  {!viewerLoading && viewerMedia?.url && (
+                    <img
+                      src={viewerMedia.url}
+                      alt={viewerTreeTitle}
+                      className="h-full w-full max-h-full max-w-full object-contain"
+                    />
+                  )}
+                  {!viewerLoading && !viewerMedia?.url && (
+                    <div className="text-sm text-rose-200">
+                      {viewerError || 'La imagen no está disponible.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {canNavigateTreeViewer && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    showNextTreePhoto();
+                  }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-white/90 p-4 text-2xl font-semibold text-slate-900 shadow-lg shadow-black/40 transition hover:bg-white focus:outline-none focus-visible:ring focus-visible:ring-white/40"
+                  aria-label="Foto siguiente"
+                >
+                  ›
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

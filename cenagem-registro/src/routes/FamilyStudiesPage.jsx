@@ -609,11 +609,13 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
 
   const handleCreateStudy = async ({ tipo, resultado, file }) => {
     if (!fam || !selectedMemberId) return false;
+    const label = (tipo || "").trim();
+    if (!label) return false;
     const today = new Date().toISOString().slice(0, 10);
     const studyPayload = {
       memberId: selectedMemberId,
-      tipo,
-      nombre: file ? file.name : "",
+      tipo: "COMPLEMENTARY",
+      nombre: label,
       fecha: today,
       resultado,
     };
@@ -624,7 +626,7 @@ export default function FamilyStudiesPage({ familyId, inline = false }) {
           memberId: selectedMemberId,
           studyId: study.id,
           category: 'STUDY_RESULT',
-          description: resultado,
+          description: resultado || label,
           file,
         });
       }
